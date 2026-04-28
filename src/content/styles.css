@@ -1,0 +1,7 @@
+/* Styles for the translator popup */
+.translator-popup-container {
+  all: initial;
+  position: absolute;
+  z-index: 2147483647;
+  font-family: sans-serif;
+}
