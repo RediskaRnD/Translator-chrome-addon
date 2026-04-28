@@ -5,6 +5,14 @@ console.log('Quick Translator: Content script initialized');
 const popupManager = new PopupManager();
 
 document.addEventListener('mouseup', (event) => {
+  // Проверяем, не был ли клик внутри нашего попапа
+  const path = event.composedPath();
+  const isInsidePopup = path.some(el => 
+    el instanceof HTMLElement && el.classList.contains('translator-popup-container')
+  );
+  
+  if (isInsidePopup) return;
+
   const selection = window.getSelection()?.toString().trim();
   console.log('Quick Translator: Mouseup detected, selection:', selection);
   if (selection) {

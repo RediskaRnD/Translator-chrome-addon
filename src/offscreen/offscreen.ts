@@ -1,3 +1,5 @@
+console.log('Offscreen: Script loaded and listener registered.');
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'PLAY_AUDIO') {
     console.log('Offscreen: Received request to play:', message.url);

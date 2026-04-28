@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quick Translator",
-  "version": "1.0.14",
+  "version": "1.0.47",
   "description": "Translate selected text and listen with multiple accents.",
   "permissions": [
     "storage",
@@ -9,7 +9,7 @@
     "offscreen"
   ],
   "background": {
-    "service_worker": "src/background/index.ts",
+    "service_worker": "src/background.ts",
     "type": "module"
   },
   "content_scripts": [
