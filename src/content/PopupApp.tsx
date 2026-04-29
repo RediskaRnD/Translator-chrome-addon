@@ -158,13 +158,36 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[^\wа-яё]/gi, "");
   const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
 
-  const renderLine = (text: string, lang: string, key?: string) => {
+  const handleWordClick = (word: string) => {
+    const newFrom = to;
+    const newTo = from === 'auto' ? 'en' : from; // Default to English if was auto
+    setFrom(newFrom);
+    setTo(newTo);
+    setOriginalText(word);
+    requestTranslation(word, newFrom, newTo);
+  };
+
+  const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
     const accents = getAccentsForLanguage(lang);
     const list = accents.length > 0 ? accents : [{ code: lang, label: "🔊" }];
 
     return (
       <div className="line" key={key || text}>
-        <div className="word-text">{text}</div>
+        <div className="word-text">
+          {isTranslation ? (
+            text.split(/(\s+)/).map((part, i) => (
+              part.trim() ? (
+                <span 
+                  key={i} 
+                  className="clickable-word" 
+                  onClick={() => handleWordClick(part.replace(/[^\wа-яё]/gi, ''))}
+                >
+                  {part}
+                </span>
+              ) : part
+            ))
+          ) : text}
+        </div>
         <div className="accent-buttons">
           {list.map((a) => (
             <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code)}>
@@ -209,25 +232,15 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         </div>
 
         <div className="section" style={{ borderTop: '1px solid #eee' }}>
-          {renderLine(translatedText, to, 'main-translation')}
+          {renderLine(translatedText, to, 'main-translation', true)}
 
           {dictionary.map((group, idx) => (
             <div key={idx} style={{ marginTop: '12px' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '10px',
-                color: '#b2bec3',
-                textTransform: 'uppercase',
-                fontWeight: '600',
-                marginBottom: '6px',
-                letterSpacing: '0.5px'
-              }}>
+              <div className="pos-header">
                 <span>{group.pos}</span>
-                <div style={{ flex: 1, height: '1px', background: '#f1f2f6' }}></div>
+                <div className="pos-line"></div>
               </div>
-              {group.terms.map((term, tIdx) => renderLine(term, to, `${idx}-${tIdx}`))}
+              {group.terms.map((term, tIdx) => renderLine(term, to, `${idx}-${tIdx}`, true))}
             </div>
           ))}
         </div>
@@ -268,7 +281,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           flex-shrink: 0;
           user-select: none;
         }
-        .lang-selects { display: flex; align-items: center; gap: 6px; }
+        .lang-selects { display: flex; align-items: center; gap: 6px; user-select: none; }
         .nav-btn {
           background: #fff; border: 1px solid #ccc; border-radius: 3px;
           padding: 1px 6px; cursor: pointer; font-size: 14px; color: #7f8c8d;
@@ -286,15 +299,31 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .line { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 2px; }
         .line:last-child { margin-bottom: 0; }
         .word-text { line-height: 1.4; word-break: break-word; flex: 1; }
-        .accent-buttons { display: flex; gap: 3px; }
+        .clickable-word { cursor: pointer; border-bottom: 1px dashed transparent; transition: border-color 0.2s; }
+        .clickable-word:hover { border-bottom-color: #3498db; color: #3498db; }
+        .pos-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          fontSize: 10px;
+          color: #b2bec3;
+          text-transform: uppercase;
+          font-weight: 600;
+          margin-bottom: 6px;
+          letter-spacing: 0.5px;
+          user-select: none;
+        }
+        .pos-line { flex: 1; height: '1px'; background: #f1f2f6; }
+        .accent-buttons { display: flex; gap: 3px; user-select: none; }
         .accent-btn {
           width: 28px; height: 18px; display: flex; align-items: center; justify-content: center;
           background: #fff; border: 1px solid #ddd; border-radius: 3px;
           font-size: 9px; font-weight: bold; cursor: pointer; color: #7f8c8d;
+          user-select: none;
         }
         .accent-btn:hover { background: #3498db; color: white; }
-        .footer { padding: 4px 12px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-        .forvo-link { color: #3498db; text-decoration: none; font-size: 11px; cursor: pointer; }
+        .footer { padding: 4px 12px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
+        .forvo-link { color: #3498db; text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
       `}</style>
     </div>
   );
