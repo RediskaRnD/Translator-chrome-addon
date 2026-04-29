@@ -24,7 +24,7 @@ export interface HistoryItem {
   timestamp: number;
 }
 
-export type MessageType = 'TRANSLATE' | 'SPEAK' | 'GET_VOICES' | 'PING';
+export type MessageType = 'TRANSLATE' | 'SPEAK' | 'GET_VOICES' | 'PING' | 'OPEN_OPTIONS';
 
 export interface Message {
   type: MessageType;

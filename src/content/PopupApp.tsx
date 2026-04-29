@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LANGUAGES } from "../shared/languages";
+import { LANGUAGES, getLanguageName } from "../shared/languages";
 import { getAccentsForLanguage } from "../shared/accents";
 import { CacheManager } from "../shared/CacheManager";
 import { HistoryItem } from "../shared/types";
@@ -12,7 +12,7 @@ interface PopupAppProps {
   version: string;
 }
 
-export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, onClose, version }) => {
+export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version }) => {
   const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
   const [isPinned, setIsPinned] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -23,6 +23,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [scale, setScale] = useState(1.0);
 
   const [originalText, setOriginalText] = useState(initialText);
+  const [translatedText, setTranslatedText] = useState("");
+  const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
+  const [from, setFrom] = useState("auto");
+  const [to, setTo] = useState("ru");
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [historyLength, setHistoryLength] = useState(0);
 
   // Load settings including UI Scale
   useEffect(() => {
@@ -42,13 +48,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   useEffect(() => {
     setOriginalText(initialText);
   }, [initialText]);
-
-  const [translatedText, setTranslatedText] = useState("");
-  const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
-  const [from, setFrom] = useState("auto");
-  const [to, setTo] = useState("ru");
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [historyLength, setHistoryLength] = useState(0);
 
   // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -80,7 +79,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         const popupElement = document.querySelector('.translator-popup-container')?.shadowRoot?.querySelector('.popup') as HTMLElement;
         if (popupElement) {
           const rect = popupElement.getBoundingClientRect();
-          // Adjust height calculation for zoom/scale
           const newHeight = (e.clientY - rect.top) / scale;
           setManualHeight(Math.max(150, newHeight));
         }
@@ -182,16 +180,19 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   };
 
-  const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[^\wа-яё]/gi, "");
+  const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
   const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
 
   const handleWordClick = (word: string) => {
+    const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
+    if (!cleanWord) return;
+
     const newFrom = to;
     const newTo = from === 'auto' ? 'en' : from;
     setFrom(newFrom);
     setTo(newTo);
-    setOriginalText(word);
-    requestTranslation(word, newFrom, newTo);
+    setOriginalText(cleanWord);
+    requestTranslation(cleanWord, newFrom, newTo);
   };
 
   const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
@@ -207,7 +208,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
                 <span 
                   key={i} 
                   className="clickable-word" 
-                  onClick={() => handleWordClick(part.replace(/[^\wа-яё]/gi, ''))}
+                  onClick={() => handleWordClick(part)}
                 >
                   {part}
                 </span>
@@ -226,6 +227,10 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     );
   };
 
+  const openOptions = () => {
+    chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+  };
+
   const popupStyle: React.CSSProperties = {
     left: pos.x,
     top: pos.y,
@@ -234,19 +239,33 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     zoom: scale
   };
 
+  const getShortCode = (code: string) => {
+    if (code === 'auto') return 'AUTO';
+    return code.split('-')[0].toUpperCase();
+  };
+
   return (
     <div className="popup" style={popupStyle}>
       <div className="header" onMouseDown={handleMouseDown} style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
         <div className="lang-selects">
-          <select value={from} onChange={(e) => { setFrom(e.target.value); requestTranslation(originalText, e.target.value, to); }}>
-            {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-          </select>
+          <div className="select-wrapper" title={getLanguageName(from)}>
+            <span className="lang-code-display">{getShortCode(from)}</span>
+            <select value={from} onChange={(e) => { setFrom(e.target.value); requestTranslation(originalText, e.target.value, to); }}>
+              {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+            </select>
+          </div>
           <span>→</span>
-          <select value={to} onChange={(e) => { setTo(e.target.value); requestTranslation(originalText, from, e.target.value); }}>
-            {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-          </select>
+          <div className="select-wrapper" title={getLanguageName(to)}>
+            <span className="lang-code-display">{getShortCode(to)}</span>
+            <select value={to} onChange={(e) => { setTo(e.target.value); requestTranslation(originalText, from, e.target.value); }}>
+              {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+            </select>
+          </div>
         </div>
         <div className="header-controls">
+          <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)} title="History Back">←</button>
+          <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)} title="History Forward">→</button>
+          <button className="nav-btn" onClick={openOptions} title="Settings">⚙️</button>
           <button
             className={`nav-btn ${isPinned ? 'pinned' : ''}`}
             onClick={() => setIsPinned(!isPinned)}
@@ -255,9 +274,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           >
             📌
           </button>
-          <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)}>←</button>
-          <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)}>→</button>
-          <button className="close-btn" onClick={onClose}>&times;</button>
         </div>
       </div>
 
@@ -313,7 +329,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         }
         .header {
           background: #f1f3f5;
-          padding: 8px 12px;
+          padding: 6px 10px;
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -321,16 +337,25 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           flex-shrink: 0;
           user-select: none;
         }
-        .lang-selects { display: flex; align-items: center; gap: 6px; user-select: none; }
+        .lang-selects { display: flex; align-items: center; gap: 4px; user-select: none; }
+        .select-wrapper { position: relative; display: flex; align-items: center; padding: 2px 4px; border-radius: 3px; transition: background 0.2s; }
+        .select-wrapper:hover { background: #e0e0e0; }
+        .lang-code-display { font-size: 11px; font-weight: bold; color: #34495e; cursor: pointer; }
+        .select-wrapper select {
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          opacity: 0;
+          cursor: pointer;
+        }
+        .header-controls { display: flex; align-items: center; gap: 2px; }
         .nav-btn {
           background: #fff; border: 1px solid #ccc; border-radius: 3px;
-          padding: 1px 6px; cursor: pointer; font-size: 14px; color: #7f8c8d;
-          margin-right: 4px;
+          padding: 2px 5px; cursor: pointer; font-size: 13px; color: #7f8c8d;
           user-select: none;
+          display: flex; align-items: center; justify-content: center;
         }
         .nav-btn:disabled { opacity: 0.5; cursor: default; }
         .nav-btn.pinned { border-color: #3498db; }
-        .close-btn { background: none; border: none; color: #95a5a6; font-size: 20px; cursor: pointer; line-height: 1; user-select: none; }
         .content-scrollable {
           flex: 1;
           overflow-y: auto;

@@ -23,6 +23,11 @@ chrome.runtime.onMessage.addListener(
       sendResponse({ success: true, version: VERSION });
       return false;
     }
+
+    if (message.type === "OPEN_OPTIONS") {
+      chrome.runtime.openOptionsPage();
+      return false;
+    }
     return false;
   },
 );

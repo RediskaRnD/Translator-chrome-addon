@@ -26,39 +26,53 @@ function initContainer() {
   document.body.appendChild(container);
 }
 
-function showPopup(text: string) {
+async function showPopup(text: string) {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
 
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
-
+  
   initContainer();
   if (!shadowRoot) return;
 
   const isPinned = (container as any).isPinned;
 
-  // Calculate smart position only if NOT pinned
+  // Get current scale to calculate boundaries correctly
+  const settings = await chrome.storage.local.get(['uiScale']);
+  const scale = (settings.uiScale as number) || 1.0;
+
+  // Calculate smart position relative to viewport
   let x = 0;
   let y = 0;
 
   if (!isPinned) {
-    const popupWidth = 350;
-    const popupHeight = 200; 
+    const popupWidth = 350 * scale;
+    const popupHeight = 200 * scale; 
     const margin = 10;
 
     x = rect.left;
     y = rect.bottom + margin;
 
+    // Check right boundary
     if (x + popupWidth > window.innerWidth) {
       x = window.innerWidth - popupWidth - margin;
     }
-    if (x < 0) x = margin;
+    // Check left boundary
+    if (x < 0) {
+      x = margin;
+    }
 
+    // Check bottom boundary
     if (y + popupHeight > window.innerHeight) {
       const spaceAbove = rect.top - popupHeight - margin;
-      if (spaceAbove > 0) y = spaceAbove;
+      if (spaceAbove > 0) {
+        y = spaceAbove;
+      }
     }
+    
+    // Safety check for top
+    if (y < 0) y = margin;
   }
 
   if (!reactRoot) {
