@@ -17,11 +17,19 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [isPinned, setIsPinned] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
+  
   const [isResizing, setIsResizing] = useState(false);
   const [manualHeight, setManualHeight] = useState<number | null>(null);
+  const [scale, setScale] = useState(1.0);
 
   const [originalText, setOriginalText] = useState(initialText);
+
+  // Load settings including UI Scale
+  useEffect(() => {
+    chrome.storage.local.get(['uiScale'], (settings) => {
+      if (settings.uiScale) setScale(settings.uiScale as number);
+    });
+  }, []);
 
   // Update position if new coordinates are provided (not pinned)
   useEffect(() => {
@@ -42,7 +50,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
 
-  // Drag logic
+  // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.classList.contains('resize-handle-bottom')) return;
@@ -54,6 +62,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     e.preventDefault();
     setIsResizing(true);
   };
+
+  const updateHistoryLength = useCallback(async () => {
+    const history = await CacheManager.getHistory();
+    setHistoryLength(history.length);
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -67,7 +80,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         const popupElement = document.querySelector('.translator-popup-container')?.shadowRoot?.querySelector('.popup') as HTMLElement;
         if (popupElement) {
           const rect = popupElement.getBoundingClientRect();
-          const newHeight = e.clientY - rect.top;
+          // Adjust height calculation for zoom/scale
+          const newHeight = (e.clientY - rect.top) / scale;
           setManualHeight(Math.max(150, newHeight));
         }
       }
@@ -85,7 +99,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragStart]);
+  }, [isDragging, isResizing, dragStart, scale]);
 
   // Communicating with index.tsx via a custom property on the container
   useEffect(() => {
@@ -94,11 +108,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       (container as any).isPinned = isPinned;
     }
   }, [isPinned]);
-
-  const updateHistoryLength = useCallback(async () => {
-    const history = await CacheManager.getHistory();
-    setHistoryLength(history.length);
-  }, []);
 
   const requestTranslation = useCallback((text: string, src: string, target: string) => {
     chrome.runtime.sendMessage(
@@ -163,7 +172,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
       setTranslatedText(data.translatedText || "");
       
-      // Handle legacy "alternatives" or new "dictionary"
       if (data.dictionary) {
         setDictionary(data.dictionary);
       } else if (data.alternatives) {
@@ -179,7 +187,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const handleWordClick = (word: string) => {
     const newFrom = to;
-    const newTo = from === 'auto' ? 'en' : from; // Default to English if was auto
+    const newTo = from === 'auto' ? 'en' : from;
     setFrom(newFrom);
     setTo(newTo);
     setOriginalText(word);
@@ -218,11 +226,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     );
   };
 
-  const popupStyle = {
+  const popupStyle: React.CSSProperties = {
     left: pos.x,
     top: pos.y,
     height: manualHeight !== null ? `${manualHeight}px` : 'auto',
-    maxHeight: manualHeight !== null ? 'none' : '555px'
+    maxHeight: manualHeight !== null ? 'none' : '555px',
+    zoom: scale
   };
 
   return (
@@ -277,7 +286,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         <span style={{ fontSize: '9px', color: '#bdc3c7' }}>v{version}</span>
       </div>
 
-      {/* Resize handle for bottom edge */}
       <div 
         className="resize-handle-bottom" 
         onMouseDown={handleResizeStart}
@@ -297,7 +305,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           border: 1px solid #d0d0d0;
           display: flex;
           flex-direction: column;
-          resize: horizontal; /* Corner resize still works for width */
+          resize: horizontal;
           min-width: 250px;
           min-height: 150px;
           width: 350px;
