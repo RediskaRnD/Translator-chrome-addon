@@ -151,6 +151,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
           overflow: hidden;
           border: 1px solid #d0d0d0;
           user-select: none !important;
+          pointer-events: auto;
         }
         .header {
           background: #f1f3f5;

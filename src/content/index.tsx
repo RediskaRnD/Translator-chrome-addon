@@ -13,6 +13,15 @@ function initContainer() {
   if (container) return;
   container = document.createElement('div');
   container.className = 'translator-popup-container';
+  Object.assign(container.style, {
+    position: 'fixed',
+    top: '0',
+    left: '0',
+    width: '100%',
+    height: '100%',
+    zIndex: '2147483647',
+    pointerEvents: 'none'
+  });
   shadowRoot = container.attachShadow({ mode: 'open' });
   document.body.appendChild(container);
 }
@@ -35,28 +44,28 @@ function showPopup(text: string) {
   shadowRoot.innerHTML = '';
   shadowRoot.appendChild(rootDiv);
   
-  // Calculate smart position
+  // Calculate smart position relative to viewport
   const popupWidth = 350;
-  const popupHeight = 200; // Estimated initial height
+  const popupHeight = 200; 
   const margin = 10;
 
-  let x = rect.left + window.scrollX;
-  let y = rect.bottom + window.scrollY + margin;
+  let x = rect.left;
+  let y = rect.bottom + margin;
 
   // Check right boundary
-  if (x + popupWidth > window.innerWidth + window.scrollX) {
-    x = window.innerWidth + window.scrollX - popupWidth - margin;
+  if (x + popupWidth > window.innerWidth) {
+    x = window.innerWidth - popupWidth - margin;
   }
 
   // Check left boundary
-  if (x < window.scrollX) {
-    x = window.scrollX + margin;
+  if (x < 0) {
+    x = margin;
   }
 
   // Check bottom boundary (if no space below, show above)
-  if (y + popupHeight > window.innerHeight + window.scrollY) {
-    const spaceAbove = rect.top + window.scrollY - popupHeight - margin;
-    if (spaceAbove > window.scrollY) {
+  if (y + popupHeight > window.innerHeight) {
+    const spaceAbove = rect.top - popupHeight - margin;
+    if (spaceAbove > 0) {
       y = spaceAbove;
     }
   }
