@@ -1,10 +1,11 @@
 {
   "name": "translator",
-  "version": "1.0.47",
+  "version": "1.0.52",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npx ts-node update-version.ts",
+    "prebuild": "node update-version.js",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
@@ -16,7 +17,14 @@
     "@crxjs/vite-plugin": "^2.0.0-beta.33",
     "@types/chrome": "^0.1.40",
     "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.0",
     "typescript": "^6.0.3",
     "vite": "^5.4.21"
+  },
+  "dependencies": {
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   }
 }
