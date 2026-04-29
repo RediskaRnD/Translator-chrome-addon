@@ -98,6 +98,7 @@ function hidePopup() {
 }
 
 const handleOutsideClick = (event: MouseEvent) => {
+  if (container && (container as any).isPinned) return;
   if (container && !event.composedPath().includes(container)) {
     hidePopup();
   }

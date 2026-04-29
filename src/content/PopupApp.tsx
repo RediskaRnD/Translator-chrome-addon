@@ -12,7 +12,12 @@ interface PopupAppProps {
   version: string;
 }
 
-export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, version }) => {
+export const PopupApp: React.FC<PopupAppProps> = ({ x: initialX, y: initialY, initialText, onClose, version }) => {
+  const [pos, setPos] = useState({ x: initialX, y: initialY });
+  const [isPinned, setIsPinned] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
   const [originalText, setOriginalText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState("");
   const [alternatives, setAlternatives] = useState<string[]>([]);
@@ -20,6 +25,43 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
   const [to, setTo] = useState("ru");
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
+
+  // Drag logic
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION') return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pos.x, y: e.clientY - pos.y });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        setPos({
+          x: e.clientX - dragStart.x,
+          y: e.clientY - dragStart.y
+        });
+      }
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragStart]);
+
+  // Communicating with index.tsx via a custom property on the container
+  useEffect(() => {
+    const container = document.querySelector('.translator-popup-container');
+    if (container) {
+      (container as any).isPinned = isPinned;
+    }
+  }, [isPinned]);
 
   const updateHistoryLength = useCallback(async () => {
     const history = await CacheManager.getHistory();
@@ -35,7 +77,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
       (res) => {
         if (res) {
           const detected = res.detectedLanguage || "en";
-          // Check if we should swap languages based on detection
           chrome.storage.local.get(["nativeLang", "learningLang"], (settings) => {
             const native = (settings.nativeLang as string) || "ru";
             const learning = (settings.learningLang as string) || "en";
@@ -105,8 +146,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
   };
 
   return (
-    <div className="popup" style={{ left: x, top: y }}>
-      <div className="header">
+    <div className="popup" style={{ left: pos.x, top: pos.y }}>
+      <div className="header" onMouseDown={handleMouseDown} style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
         <div className="lang-selects">
           <select value={from} onChange={(e) => { setFrom(e.target.value); requestTranslation(originalText, e.target.value, to); }}>
             {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
@@ -117,19 +158,29 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
           </select>
         </div>
         <div className="header-controls">
+          <button 
+            className={`nav-btn ${isPinned ? 'pinned' : ''}`} 
+            onClick={() => setIsPinned(!isPinned)}
+            title={isPinned ? 'Unpin' : 'Pin'}
+            style={{ color: isPinned ? '#3498db' : '#7f8c8d', fontWeight: isPinned ? 'bold' : 'normal' }}
+          >
+            📌
+          </button>
           <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)}>←</button>
           <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)}>→</button>
           <button className="close-btn" onClick={onClose}>&times;</button>
         </div>
       </div>
       
-      <div className="section">
-        {renderLine(originalText, from === "auto" ? "en" : from)}
-      </div>
-      
-      <div className="section" style={{ borderTop: '1px solid #eee' }}>
-        {renderLine(translatedText, to)}
-        {alternatives.map(alt => renderLine(alt, to))}
+      <div className="content-scrollable">
+        <div className="section">
+          {renderLine(originalText, from === "auto" ? "en" : from)}
+        </div>
+        
+        <div className="section" style={{ borderTop: '1px solid #eee' }}>
+          {renderLine(translatedText, to)}
+          {alternatives.map(alt => renderLine(alt, to))}
+        </div>
       </div>
 
       <div className="footer">
@@ -146,11 +197,15 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           font-size: 14px;
           color: #2c3e50;
-          width: 350px;
           z-index: 2147483647;
           overflow: hidden;
           border: 1px solid #d0d0d0;
-          user-select: none !important;
+          display: flex;
+          flex-direction: column;
+          resize: both;
+          min-width: 250px;
+          min-height: 150px;
+          width: 350px;
           pointer-events: auto;
         }
         .header {
@@ -160,15 +215,23 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
           justify-content: space-between;
           align-items: center;
           border-bottom: 1px solid #e0e0e0;
+          flex-shrink: 0;
+          user-select: none;
         }
         .lang-selects { display: flex; align-items: center; gap: 6px; }
         .nav-btn {
           background: #fff; border: 1px solid #ccc; border-radius: 3px;
           padding: 1px 6px; cursor: pointer; font-size: 14px; color: #7f8c8d;
           margin-right: 4px;
+          user-select: none;
         }
         .nav-btn:disabled { opacity: 0.5; cursor: default; }
-        .close-btn { background: none; border: none; color: #95a5a6; font-size: 20px; cursor: pointer; line-height: 1; }
+        .nav-btn.pinned { border-color: #3498db; }
+        .close-btn { background: none; border: none; color: #95a5a6; font-size: 20px; cursor: pointer; line-height: 1; user-select: none; }
+        .content-scrollable {
+          flex: 1;
+          overflow-y: auto;
+        }
         .section { padding: 10px 12px; }
         .line { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
         .line:last-child { margin-bottom: 0; }
@@ -180,7 +243,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x, y, initialText, onClose, 
           font-size: 9px; font-weight: bold; cursor: pointer; color: #7f8c8d;
         }
         .accent-btn:hover { background: #3498db; color: white; }
-        .footer { padding: 4px 12px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .footer { padding: 4px 12px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         .forvo-link { color: #3498db; text-decoration: none; font-size: 11px; cursor: pointer; }
       `}</style>
     </div>
