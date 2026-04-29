@@ -132,8 +132,26 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       setOriginalText(item.text);
       setFrom(item.from);
       setTo(item.to);
-      setTranslatedText(item.translation.translatedText);
-      setDictionary(item.translation.dictionary || []);
+
+      let data = item.translation;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          data = { translatedText: data, dictionary: [] };
+        }
+      }
+
+      setTranslatedText(data.translatedText || "");
+      
+      // Handle legacy "alternatives" or new "dictionary"
+      if (data.dictionary) {
+        setDictionary(data.dictionary);
+      } else if (data.alternatives) {
+        setDictionary([{ pos: 'alternatives', terms: data.alternatives }]);
+      } else {
+        setDictionary([]);
+      }
     }
   };
 
