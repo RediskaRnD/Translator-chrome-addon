@@ -14,6 +14,7 @@ export interface Settings {
   learningLang: string;
   preferredVoice?: string;
   historyLimit: number;
+  theme: 'light' | 'dark' | 'system';
 }
 
 export interface HistoryItem {

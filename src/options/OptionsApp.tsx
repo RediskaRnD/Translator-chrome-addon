@@ -7,16 +7,18 @@ export const OptionsApp: React.FC = () => {
   const [preferredVoice, setPreferredVoice] = useState('');
   const [historyLimit, setHistoryLimit] = useState(20);
   const [uiScale, setUiScale] = useState(1.0);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoice', 'historyLimit', 'uiScale'], (settings) => {
+    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoice', 'historyLimit', 'uiScale', 'theme'], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.preferredVoice) setPreferredVoice(settings.preferredVoice as string);
       if (settings.historyLimit) setHistoryLimit(settings.historyLimit as number);
       if (settings.uiScale) setUiScale(settings.uiScale as number);
+      if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
     });
 
     chrome.tts.getVoices((v) => {
@@ -24,13 +26,36 @@ export const OptionsApp: React.FC = () => {
     });
   }, []);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const applyTheme = (currentTheme: 'light' | 'dark' | 'system') => {
+      if (currentTheme === 'system') {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      } else {
+        root.setAttribute('data-theme', currentTheme);
+      }
+    };
+
+    applyTheme(theme);
+
+    if (theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = () => applyTheme('system');
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+    return;
+  }, [theme]);
+
   const handleSave = () => {
     chrome.storage.local.set({
       nativeLang,
       learningLang,
       preferredVoice,
       historyLimit,
-      uiScale
+      uiScale,
+      theme
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -74,27 +99,37 @@ export const OptionsApp: React.FC = () => {
           <section className="setting-group">
             <h3>Appearance & Behavior</h3>
             <div className="input-field">
+              <label>Theme</label>
+              <p className="description">Choose between light, dark or system preference.</p>
+              <select value={theme} onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}>
+                <option value="system">System Default</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+
+            <div className="input-field">
               <label>UI Scale ({uiScale.toFixed(1)}x)</label>
               <p className="description">Adjust the size of the translation window.</p>
-              <input 
-                type="range" 
-                min="0.8" 
-                max="1.5" 
-                step="0.1" 
-                value={uiScale} 
-                onChange={(e) => setUiScale(parseFloat(e.target.value))} 
+              <input
+                type="range"
+                min="0.8"
+                max="1.5"
+                step="0.1"
+                value={uiScale}
+                onChange={(e) => setUiScale(parseFloat(e.target.value))}
               />
             </div>
 
             <div className="input-field">
               <label>History Limit</label>
               <p className="description">Number of recent translations to remember.</p>
-              <input 
-                type="number" 
-                min="1" 
-                max="100" 
-                value={historyLimit} 
-                onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 1)} 
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={historyLimit}
+                onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 1)}
               />
             </div>
           </section>
@@ -128,15 +163,29 @@ export const OptionsApp: React.FC = () => {
           --primary-color: #3498db;
           --bg-color: #f5f7fa;
           --card-bg: #ffffff;
+          --header-bg: #fcfcfd;
           --text-color: #2c3e50;
           --text-secondary: #7f8c8d;
           --border-color: #e0e6ed;
+          --input-bg: #ffffff;
         }
+
+        [data-theme='dark'] {
+          --bg-color: #1a1a1a;
+          --card-bg: #2d2d2d;
+          --header-bg: #252525;
+          --text-color: #e0e0e0;
+          --text-secondary: #a0a0a0;
+          --border-color: #404040;
+          --input-bg: #3d3d3d;
+        }
+
         body {
           background-color: var(--bg-color);
           margin: 0;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           color: var(--text-color);
+          transition: background-color 0.3s, color 0.3s;
         }
         .container {
           display: flex;
@@ -148,12 +197,13 @@ export const OptionsApp: React.FC = () => {
           width: 100%;
           max-width: 500px;
           border-radius: 12px;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.1);
           border: 1px solid var(--border-color);
           overflow: hidden;
+          transition: background-color 0.3s, border-color 0.3s;
         }
         .card-header {
-          background: #fcfcfd;
+          background: var(--header-bg);
           padding: 24px;
           border-bottom: 1px solid var(--border-color);
           display: flex;
@@ -210,7 +260,9 @@ export const OptionsApp: React.FC = () => {
           border-radius: 6px;
           font-size: 14px;
           outline: none;
-          transition: border-color 0.2s;
+          background-color: var(--input-bg);
+          color: var(--text-color);
+          transition: border-color 0.2s, background-color 0.3s, color 0.3s;
         }
         select:focus, input[type="number"]:focus {
           border-color: var(--primary-color);
@@ -222,7 +274,7 @@ export const OptionsApp: React.FC = () => {
         }
         .card-footer {
           padding: 20px 24px;
-          background: #fcfcfd;
+          background: var(--header-bg);
           border-top: 1px solid var(--border-color);
           display: flex;
           align-items: center;

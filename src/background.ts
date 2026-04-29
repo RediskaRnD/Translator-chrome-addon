@@ -3,6 +3,22 @@ import { CacheManager } from "./shared/CacheManager";
 
 const VERSION = chrome.runtime.getManifest().version;
 
+// Set default settings on install
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.get(['nativeLang', 'learningLang', 'historyLimit', 'uiScale', 'theme'], (result) => {
+    const defaults: any = {};
+    if (!result.nativeLang) defaults.nativeLang = 'ru';
+    if (!result.learningLang) defaults.learningLang = 'en';
+    if (!result.historyLimit) defaults.historyLimit = 20;
+    if (result.uiScale === undefined) defaults.uiScale = 1.0;
+    if (!result.theme) defaults.theme = 'system';
+    
+    if (Object.keys(defaults).length > 0) {
+      chrome.storage.local.set(defaults);
+    }
+  });
+});
+
 // Красивый лог инициализации
 console.log(
   `%c--- SYSTEM LOADED V${VERSION} ---`,

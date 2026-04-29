@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quick Translator",
-  "version": "1.0.70",
+  "version": "1.0.73",
   "description": "Translate selected text and listen with multiple accents.",
   "permissions": [
     "storage",

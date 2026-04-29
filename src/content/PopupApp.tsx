@@ -13,14 +13,16 @@ interface PopupAppProps {
 }
 
 export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version }) => {
+  const popupRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
   const [isPinned, setIsPinned] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  
+
   const [isResizing, setIsResizing] = useState(false);
   const [manualHeight, setManualHeight] = useState<number | null>(null);
   const [scale, setScale] = useState(1.0);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
 
   const [originalText, setOriginalText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState("");
@@ -30,12 +32,38 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
 
-  // Load settings including UI Scale
+  // Load settings
   useEffect(() => {
-    chrome.storage.local.get(['uiScale'], (settings) => {
+    chrome.storage.local.get(['uiScale', 'theme'], (settings) => {
       if (settings.uiScale) setScale(settings.uiScale as number);
+      if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
     });
   }, []);
+
+  // Apply theme to the popup element
+  useEffect(() => {
+    const popupElement = popupRef.current;
+    if (!popupElement) return;
+
+    const applyTheme = (currentTheme: 'light' | 'dark' | 'system') => {
+      if (currentTheme === 'system') {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        popupElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      } else {
+        popupElement.setAttribute('data-theme', currentTheme);
+      }
+    };
+
+    applyTheme(theme);
+
+    if (theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = () => applyTheme('system');
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+    return;
+  }, [theme]); // No need for translatedText anymore as popupElement is stable via ref
 
   // Update position if new coordinates are provided (not pinned)
   useEffect(() => {
@@ -169,7 +197,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       }
 
       setTranslatedText(data.translatedText || "");
-      
+
       if (data.dictionary) {
         setDictionary(data.dictionary);
       } else if (data.alternatives) {
@@ -205,9 +233,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           {isTranslation ? (
             text.split(/(\s+)/).map((part, i) => (
               part.trim() ? (
-                <span 
-                  key={i} 
-                  className="clickable-word" 
+                <span
+                  key={i}
+                  className="clickable-word"
                   onClick={() => handleWordClick(part)}
                 >
                   {part}
@@ -245,7 +273,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   };
 
   return (
-    <div className="popup" style={popupStyle}>
+    <div className="popup" style={popupStyle} ref={popupRef}>
       <div className="header" onMouseDown={handleMouseDown} style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
         <div className="lang-selects">
           <div className="select-wrapper" title={getLanguageName(from)}>
@@ -302,23 +330,38 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         <span style={{ fontSize: '9px', color: '#bdc3c7' }}>v{version}</span>
       </div>
 
-      <div 
-        className="resize-handle-bottom" 
+      <div
+        className="resize-handle-bottom"
         onMouseDown={handleResizeStart}
       ></div>
 
       <style>{`
         .popup {
+          --popup-bg: #ffffff;
+          --header-bg: #f1f3f5;
+          --footer-bg: #f8f9fa;
+          --text-color: #2c3e50;
+          --text-secondary: #7f8c8d;
+          --border-color: #d0d0d0;
+          --header-border: #e0e0e0;
+          --btn-bg: #ffffff;
+          --btn-border: #cccccc;
+          --btn-hover-bg: #e0e0e0;
+          --pos-text: #b2bec3;
+          --pos-line: #f1f2f6;
+          --accent-btn-border: #dddddd;
+          --primary-color: #3498db;
+
           position: fixed;
-          background: #ffffff;
+          background: var(--popup-bg);
           border-radius: 8px;
           box-shadow: 0 4px 30px rgba(0,0,0,0.3);
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           font-size: 14px;
-          color: #2c3e50;
+          color: var(--text-color);
           z-index: 2147483647;
           overflow: hidden;
-          border: 1px solid #d0d0d0;
+          border: 1px solid var(--border-color);
           display: flex;
           flex-direction: column;
           resize: horizontal;
@@ -326,21 +369,40 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           min-height: 150px;
           width: 350px;
           pointer-events: auto;
+          transition: background 0.3s, color 0.3s, border-color 0.3s;
         }
+
+        .popup[data-theme='dark'] {
+          --popup-bg: #2c2c2c;
+          --header-bg: #1e1e1e;
+          --footer-bg: #1e1e1e;
+          --text-color: #e0e0e0;
+          --text-secondary: #a0a0a0;
+          --border-color: #444444;
+          --header-border: #333333;
+          --btn-bg: #3d3d3d;
+          --btn-border: #555555;
+          --btn-hover-bg: #4d4d4d;
+          --pos-text: #888888;
+          --pos-line: #3d3d3d;
+          --accent-btn-border: #555555;
+          --primary-color: #3498db;
+        }
+
         .header {
-          background: #f1f3f5;
+          background: var(--header-bg);
           padding: 6px 10px;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border-bottom: 1px solid #e0e0e0;
+          border-bottom: 1px solid var(--header-border);
           flex-shrink: 0;
           user-select: none;
         }
         .lang-selects { display: flex; align-items: center; gap: 4px; user-select: none; }
         .select-wrapper { position: relative; display: flex; align-items: center; padding: 2px 4px; border-radius: 3px; transition: background 0.2s; }
-        .select-wrapper:hover { background: #e0e0e0; }
-        .lang-code-display { font-size: 11px; font-weight: bold; color: #34495e; cursor: pointer; }
+        .select-wrapper:hover { background: var(--btn-hover-bg); }
+        .lang-code-display { font-size: 11px; font-weight: bold; color: var(--text-color); cursor: pointer; }
         .select-wrapper select {
           position: absolute;
           top: 0; left: 0; width: 100%; height: 100%;
@@ -349,13 +411,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         }
         .header-controls { display: flex; align-items: center; gap: 2px; }
         .nav-btn {
-          background: #fff; border: 1px solid #ccc; border-radius: 3px;
-          padding: 2px 5px; cursor: pointer; font-size: 13px; color: #7f8c8d;
+          background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 3px;
+          padding: 2px 5px; cursor: pointer; font-size: 13px; color: var(--text-secondary);
           user-select: none;
           display: flex; align-items: center; justify-content: center;
         }
+        .nav-btn:hover { background: var(--btn-hover-bg); }
         .nav-btn:disabled { opacity: 0.5; cursor: default; }
-        .nav-btn.pinned { border-color: #3498db; }
+        .nav-btn.pinned { border-color: var(--primary-color); }
         .content-scrollable {
           flex: 1;
           overflow-y: auto;
@@ -365,30 +428,30 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .line:last-child { margin-bottom: 0; }
         .word-text { line-height: 1.4; word-break: break-word; flex: 1; }
         .clickable-word { cursor: pointer; border-bottom: 1px dashed transparent; transition: border-color 0.2s; }
-        .clickable-word:hover { border-bottom-color: #3498db; color: #3498db; }
+        .clickable-word:hover { border-bottom-color: var(--primary-color); color: var(--primary-color); }
         .pos-header {
           display: flex;
           align-items: center;
           gap: 8px;
           font-size: 10px;
-          color: #b2bec3;
+          color: var(--pos-text);
           text-transform: uppercase;
           font-weight: 600;
           margin-bottom: 6px;
           letter-spacing: 0.5px;
           user-select: none;
         }
-        .pos-line { flex: 1; height: 1px; background: #f1f2f6; }
+        .pos-line { flex: 1; height: 1px; background: var(--pos-line); }
         .accent-buttons { display: flex; gap: 3px; user-select: none; }
         .accent-btn {
           width: 28px; height: 18px; display: flex; align-items: center; justify-content: center;
-          background: #fff; border: 1px solid #ddd; border-radius: 3px;
-          font-size: 9px; font-weight: bold; cursor: pointer; color: #7f8c8d;
+          background: var(--btn-bg); border: 1px solid var(--accent-btn-border); border-radius: 3px;
+          font-size: 9px; font-weight: bold; cursor: pointer; color: var(--text-secondary);
           user-select: none;
         }
-        .accent-btn:hover { background: #3498db; color: white; }
-        .footer { padding: 4px 12px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
-        .forvo-link { color: #3498db; text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
+        .accent-btn:hover { background: var(--primary-color); color: white; }
+        .footer { padding: 4px 12px; background: var(--footer-bg); border-top: 1px solid var(--header-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
+        .forvo-link { color: var(--primary-color); text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
         .resize-handle-bottom {
           position: absolute;
           bottom: 0;
