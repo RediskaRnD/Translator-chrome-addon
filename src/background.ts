@@ -86,12 +86,23 @@ async function translate(text: string, from: string, to: string) {
     const response = await fetch(url);
     const data = await response.json();
     const mainTranslation = data[0].map((item: any) => item[0]).join("");
-    const alternatives: string[] = [];
-    if (data[1] && data[1][0] && data[1][0][1]) {
-      alternatives.push(...data[1][0][1].slice(1, 11));
+    
+    // Group alternatives by parts of speech
+    const dictionary: { pos: string, terms: string[] }[] = [];
+    if (data[1]) {
+      data[1].forEach((item: any) => {
+        const pos = item[0]; // Part of speech (e.g., "noun", "verb")
+        const terms = item[1]; // Array of translations
+        dictionary.push({ pos, terms });
+      });
     }
-    return { translatedText: mainTranslation, alternatives: alternatives, detectedLanguage: data[2] };
+
+    return { 
+      translatedText: mainTranslation, 
+      dictionary: dictionary,
+      detectedLanguage: data[2] 
+    };
   } catch (error) {
-    return { translatedText: "Error", alternatives: [] };
+    return { translatedText: "Error", dictionary: [] };
   }
 }

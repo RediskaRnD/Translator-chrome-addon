@@ -31,8 +31,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   useEffect(() => {
     setOriginalText(initialText);
   }, [initialText]);
+
   const [translatedText, setTranslatedText] = useState("");
-  const [alternatives, setAlternatives] = useState<string[]>([]);
+  const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
   const [from, setFrom] = useState("auto");
   const [to, setTo] = useState("ru");
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -45,6 +46,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     setIsDragging(true);
     setDragStart({ x: e.clientX - pos.x, y: e.clientY - pos.y });
   };
+
+  const updateHistoryLength = useCallback(async () => {
+    const history = await CacheManager.getHistory();
+    setHistoryLength(history.length);
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -75,11 +81,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   }, [isPinned]);
 
-  const updateHistoryLength = useCallback(async () => {
-    const history = await CacheManager.getHistory();
-    setHistoryLength(history.length);
-  }, []);
-
   const requestTranslation = useCallback((text: string, src: string, target: string) => {
     chrome.runtime.sendMessage(
       {
@@ -101,7 +102,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
             }
 
             setTranslatedText(res.translatedText);
-            setAlternatives(res.alternatives || []);
+            setDictionary(res.dictionary || []);
             setHistoryIndex(0);
             updateHistoryLength();
           });
@@ -132,19 +133,19 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       setFrom(item.from);
       setTo(item.to);
       setTranslatedText(item.translation.translatedText);
-      setAlternatives(item.translation.alternatives || []);
+      setDictionary(item.translation.dictionary || []);
     }
   };
 
   const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[^\wа-яё]/gi, "");
   const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
 
-  const renderLine = (text: string, lang: string) => {
+  const renderLine = (text: string, lang: string, key?: string) => {
     const accents = getAccentsForLanguage(lang);
     const list = accents.length > 0 ? accents : [{ code: lang, label: "🔊" }];
 
     return (
-      <div className="line" key={text}>
+      <div className="line" key={key || text}>
         <div className="word-text">{text}</div>
         <div className="accent-buttons">
           {list.map((a) => (
@@ -190,8 +191,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         </div>
         
         <div className="section" style={{ borderTop: '1px solid #eee' }}>
-          {renderLine(translatedText, to)}
-          {alternatives.map(alt => renderLine(alt, to))}
+          {renderLine(translatedText, to, 'main-translation')}
+          
+          {dictionary.map((group, idx) => (
+            <div key={idx} style={{ marginTop: '10px' }}>
+              <div style={{ fontSize: '11px', color: '#95a5a6', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>
+                {group.pos}
+              </div>
+              {group.terms.map((term, tIdx) => renderLine(term, to, `${idx}-${tIdx}`))}
+            </div>
+          ))}
         </div>
       </div>
 
