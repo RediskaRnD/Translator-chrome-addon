@@ -18,6 +18,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  const [isResizing, setIsResizing] = useState(false);
+  const [manualHeight, setManualHeight] = useState<number | null>(null);
+
   const [originalText, setOriginalText] = useState(initialText);
 
   // Update position if new coordinates are provided (not pinned)
@@ -42,15 +45,15 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   // Drag logic
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION') return;
+    if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.classList.contains('resize-handle-bottom')) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - pos.x, y: e.clientY - pos.y });
   };
 
-  const updateHistoryLength = useCallback(async () => {
-    const history = await CacheManager.getHistory();
-    setHistoryLength(history.length);
-  }, []);
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -60,10 +63,21 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           y: e.clientY - dragStart.y
         });
       }
+      if (isResizing) {
+        const popupElement = document.querySelector('.translator-popup-container')?.shadowRoot?.querySelector('.popup') as HTMLElement;
+        if (popupElement) {
+          const rect = popupElement.getBoundingClientRect();
+          const newHeight = e.clientY - rect.top;
+          setManualHeight(Math.max(150, newHeight));
+        }
+      }
     };
-    const handleMouseUp = () => setIsDragging(false);
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
 
-    if (isDragging) {
+    if (isDragging || isResizing) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     }
@@ -71,7 +85,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragStart]);
+  }, [isDragging, isResizing, dragStart]);
 
   // Communicating with index.tsx via a custom property on the container
   useEffect(() => {
@@ -80,6 +94,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       (container as any).isPinned = isPinned;
     }
   }, [isPinned]);
+
+  const updateHistoryLength = useCallback(async () => {
+    const history = await CacheManager.getHistory();
+    setHistoryLength(history.length);
+  }, []);
 
   const requestTranslation = useCallback((text: string, src: string, target: string) => {
     chrome.runtime.sendMessage(
@@ -199,8 +218,15 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     );
   };
 
+  const popupStyle = {
+    left: pos.x,
+    top: pos.y,
+    height: manualHeight !== null ? `${manualHeight}px` : 'auto',
+    maxHeight: manualHeight !== null ? 'none' : '555px'
+  };
+
   return (
-    <div className="popup" style={{ left: pos.x, top: pos.y }}>
+    <div className="popup" style={popupStyle}>
       <div className="header" onMouseDown={handleMouseDown} style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
         <div className="lang-selects">
           <select value={from} onChange={(e) => { setFrom(e.target.value); requestTranslation(originalText, e.target.value, to); }}>
@@ -251,6 +277,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         <span style={{ fontSize: '9px', color: '#bdc3c7' }}>v{version}</span>
       </div>
 
+      {/* Resize handle for bottom edge */}
+      <div 
+        className="resize-handle-bottom" 
+        onMouseDown={handleResizeStart}
+      ></div>
+
       <style>{`
         .popup {
           position: fixed;
@@ -265,7 +297,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           border: 1px solid #d0d0d0;
           display: flex;
           flex-direction: column;
-          resize: both;
+          resize: horizontal; /* Corner resize still works for width */
           min-width: 250px;
           min-height: 150px;
           width: 350px;
@@ -305,7 +337,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           display: flex;
           align-items: center;
           gap: 8px;
-          fontSize: 10px;
+          font-size: 10px;
           color: #b2bec3;
           text-transform: uppercase;
           font-weight: 600;
@@ -313,7 +345,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           letter-spacing: 0.5px;
           user-select: none;
         }
-        .pos-line { flex: 1; height: '1px'; background: #f1f2f6; }
+        .pos-line { flex: 1; height: 1px; background: #f1f2f6; }
         .accent-buttons { display: flex; gap: 3px; user-select: none; }
         .accent-btn {
           width: 28px; height: 18px; display: flex; align-items: center; justify-content: center;
@@ -324,6 +356,18 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .accent-btn:hover { background: #3498db; color: white; }
         .footer { padding: 4px 12px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
         .forvo-link { color: #3498db; text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
+        .resize-handle-bottom {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 6px;
+          cursor: ns-resize;
+          background: transparent;
+        }
+        .resize-handle-bottom:hover {
+          background: rgba(52, 152, 219, 0.1);
+        }
       `}</style>
     </div>
   );
