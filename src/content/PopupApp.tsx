@@ -5,20 +5,32 @@ import { CacheManager } from "../shared/CacheManager";
 import { HistoryItem } from "../shared/types";
 
 interface PopupAppProps {
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
   initialText: string;
   onClose: () => void;
   version: string;
 }
 
-export const PopupApp: React.FC<PopupAppProps> = ({ x: initialX, y: initialY, initialText, onClose, version }) => {
-  const [pos, setPos] = useState({ x: initialX, y: initialY });
+export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, onClose, version }) => {
+  const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
   const [isPinned, setIsPinned] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const [originalText, setOriginalText] = useState(initialText);
+
+  // Update position if new coordinates are provided (not pinned)
+  useEffect(() => {
+    if (propX !== undefined && propY !== undefined) {
+      setPos({ x: propX, y: propY });
+    }
+  }, [propX, propY]);
+
+  // Update text and trigger translation when initialText prop changes
+  useEffect(() => {
+    setOriginalText(initialText);
+  }, [initialText]);
   const [translatedText, setTranslatedText] = useState("");
   const [alternatives, setAlternatives] = useState<string[]>([]);
   const [from, setFrom] = useState("auto");

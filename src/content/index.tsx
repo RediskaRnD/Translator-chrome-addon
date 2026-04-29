@@ -32,49 +32,46 @@ function showPopup(text: string) {
 
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
-  
+
   initContainer();
   if (!shadowRoot) return;
 
-  if (reactRoot) {
-    reactRoot.unmount();
-  }
+  const isPinned = (container as any).isPinned;
 
-  const rootDiv = document.createElement('div');
-  shadowRoot.innerHTML = '';
-  shadowRoot.appendChild(rootDiv);
-  
-  // Calculate smart position relative to viewport
-  const popupWidth = 350;
-  const popupHeight = 200; 
-  const margin = 10;
+  // Calculate smart position only if NOT pinned
+  let x = 0;
+  let y = 0;
 
-  let x = rect.left;
-  let y = rect.bottom + margin;
+  if (!isPinned) {
+    const popupWidth = 350;
+    const popupHeight = 200; 
+    const margin = 10;
 
-  // Check right boundary
-  if (x + popupWidth > window.innerWidth) {
-    x = window.innerWidth - popupWidth - margin;
-  }
+    x = rect.left;
+    y = rect.bottom + margin;
 
-  // Check left boundary
-  if (x < 0) {
-    x = margin;
-  }
+    if (x + popupWidth > window.innerWidth) {
+      x = window.innerWidth - popupWidth - margin;
+    }
+    if (x < 0) x = margin;
 
-  // Check bottom boundary (if no space below, show above)
-  if (y + popupHeight > window.innerHeight) {
-    const spaceAbove = rect.top - popupHeight - margin;
-    if (spaceAbove > 0) {
-      y = spaceAbove;
+    if (y + popupHeight > window.innerHeight) {
+      const spaceAbove = rect.top - popupHeight - margin;
+      if (spaceAbove > 0) y = spaceAbove;
     }
   }
 
-  reactRoot = createRoot(rootDiv);
+  if (!reactRoot) {
+    const rootDiv = document.createElement('div');
+    shadowRoot.innerHTML = '';
+    shadowRoot.appendChild(rootDiv);
+    reactRoot = createRoot(rootDiv);
+  }
+
   reactRoot.render(
     <PopupApp 
-      x={x} 
-      y={y} 
+      x={isPinned ? undefined : x} 
+      y={isPinned ? undefined : y} 
       initialText={text} 
       onClose={hidePopup} 
       version={version}
