@@ -29,6 +29,15 @@ chrome.runtime.onMessage.addListener(
 
 async function handleSpeak(text: string, langCode: string) {
   try {
+    const cacheKey = `audio_${langCode}_${text.toLowerCase().trim()}`;
+    const cached = await chrome.storage.local.get(cacheKey);
+    
+    if (cached[cacheKey]) {
+      console.log("Using cached audio for:", text);
+      await playAudio(cached[cacheKey] as string);
+      return;
+    }
+
     const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${langCode}&client=tw-ob&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
@@ -39,6 +48,10 @@ async function handleSpeak(text: string, langCode: string) {
       binary += String.fromCharCode(uint8Array[i]);
     }
     const base64data = `data:audio/mpeg;base64,${btoa(binary)}`;
+
+    // Save to cache
+    await chrome.storage.local.set({ [cacheKey]: base64data });
+    console.log("Audio cached for:", text);
 
     await playAudio(base64data);
   } catch (e: any) {

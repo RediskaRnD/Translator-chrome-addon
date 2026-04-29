@@ -1,6 +1,6 @@
 {
   "name": "translator",
-  "version": "1.0.58",
+  "version": "1.0.62",
   "type": "module",
   "main": "index.js",
   "scripts": {

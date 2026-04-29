@@ -171,8 +171,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           </select>
         </div>
         <div className="header-controls">
-          <button 
-            className={`nav-btn ${isPinned ? 'pinned' : ''}`} 
+          <button
+            className={`nav-btn ${isPinned ? 'pinned' : ''}`}
             onClick={() => setIsPinned(!isPinned)}
             title={isPinned ? 'Unpin' : 'Pin'}
             style={{ color: isPinned ? '#3498db' : '#7f8c8d', fontWeight: isPinned ? 'bold' : 'normal' }}
@@ -184,19 +184,30 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           <button className="close-btn" onClick={onClose}>&times;</button>
         </div>
       </div>
-      
+
       <div className="content-scrollable">
         <div className="section">
           {renderLine(originalText, from === "auto" ? "en" : from)}
         </div>
-        
+
         <div className="section" style={{ borderTop: '1px solid #eee' }}>
           {renderLine(translatedText, to, 'main-translation')}
-          
+
           {dictionary.map((group, idx) => (
-            <div key={idx} style={{ marginTop: '10px' }}>
-              <div style={{ fontSize: '11px', color: '#95a5a6', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>
-                {group.pos}
+            <div key={idx} style={{ marginTop: '12px' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '10px',
+                color: '#b2bec3',
+                textTransform: 'uppercase',
+                fontWeight: '600',
+                marginBottom: '6px',
+                letterSpacing: '0.5px'
+              }}>
+                <span>{group.pos}</span>
+                <div style={{ flex: 1, height: '1px', background: '#f1f2f6' }}></div>
               </div>
               {group.terms.map((term, tIdx) => renderLine(term, to, `${idx}-${tIdx}`))}
             </div>
@@ -254,7 +265,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           overflow-y: auto;
         }
         .section { padding: 10px 12px; }
-        .line { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+        .line { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 2px; }
         .line:last-child { margin-bottom: 0; }
         .word-text { line-height: 1.4; word-break: break-word; flex: 1; }
         .accent-buttons { display: flex; gap: 3px; }
