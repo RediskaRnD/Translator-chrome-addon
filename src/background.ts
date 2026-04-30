@@ -5,13 +5,15 @@ const VERSION = chrome.runtime.getManifest().version;
 
 // Set default settings on install
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['nativeLang', 'learningLang', 'historyLimit', 'uiScale', 'theme'], (result) => {
+  chrome.storage.local.get(['nativeLang', 'learningLang', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'preferredVoices'], (result) => {
     const defaults: any = {};
     if (!result.nativeLang) defaults.nativeLang = 'ru';
     if (!result.learningLang) defaults.learningLang = 'en';
     if (!result.historyLimit) defaults.historyLimit = 20;
     if (result.uiScale === undefined) defaults.uiScale = 1.0;
     if (!result.theme) defaults.theme = 'system';
+    if (!result.autoPlayback) defaults.autoPlayback = 'off';
+    if (!result.preferredVoices) defaults.preferredVoices = {};
     
     if (Object.keys(defaults).length > 0) {
       chrome.storage.local.set(defaults);
@@ -50,6 +52,18 @@ chrome.runtime.onMessage.addListener(
 
 async function handleSpeak(text: string, langCode: string) {
   try {
+    const settings = await chrome.storage.local.get(['preferredVoices']);
+    const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
+    const preferredVoiceName = preferredVoices[langCode];
+
+    if (preferredVoiceName) {
+      chrome.tts.speak(text, {
+        voiceName: preferredVoiceName,
+        lang: langCode,
+      });
+      return;
+    }
+
     const cacheKey = `audio_${langCode}_${text.toLowerCase().trim()}`;
     const cached = await chrome.storage.local.get(cacheKey);
     

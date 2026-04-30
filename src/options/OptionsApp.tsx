@@ -4,22 +4,24 @@ import { LANGUAGES } from '../shared/languages';
 export const OptionsApp: React.FC = () => {
   const [nativeLang, setNativeLang] = useState('ru');
   const [learningLang, setLearningLang] = useState('en');
-  const [preferredVoice, setPreferredVoice] = useState('');
+  const [preferredVoices, setPreferredVoices] = useState<Record<string, string>>({});
   const [historyLimit, setHistoryLimit] = useState(20);
   const [uiScale, setUiScale] = useState(1.0);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+  const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>('off');
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoice', 'historyLimit', 'uiScale', 'theme'], (settings) => {
+    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'historyLimit', 'uiScale', 'theme', 'autoPlayback'], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
-      if (settings.preferredVoice) setPreferredVoice(settings.preferredVoice as string);
+      if (settings.preferredVoices) setPreferredVoices(settings.preferredVoices as Record<string, string>);
       if (settings.historyLimit) setHistoryLimit(settings.historyLimit as number);
       if (settings.uiScale) setUiScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
+      if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
     });
 
     chrome.tts.getVoices((v) => {
@@ -48,10 +50,11 @@ export const OptionsApp: React.FC = () => {
     chrome.storage.local.set({
       nativeLang,
       learningLang,
-      preferredVoice,
+      preferredVoices,
       historyLimit,
       uiScale,
-      theme
+      theme,
+      autoPlayback
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -63,6 +66,26 @@ export const OptionsApp: React.FC = () => {
     .map(([code, name]) => (
       <option key={code} value={code}>{name}</option>
     ));
+
+  const VoiceSelector: React.FC<{ lang: string }> = ({ lang }) => {
+    const filteredVoices = voices.filter(v => v.lang?.startsWith(lang.split('-')[0]));
+    return (
+      <div className="voice-selector">
+        <label>Voice for {LANGUAGES[lang as keyof typeof LANGUAGES] || lang}</label>
+        <select 
+          value={preferredVoices[lang] || ''} 
+          onChange={(e) => setPreferredVoices({ ...preferredVoices, [lang]: e.target.value })}
+        >
+          <option value="">System Default (Google TTS)</option>
+          {filteredVoices.map((voice) => (
+            <option key={voice.voiceName} value={voice.voiceName}>
+              {voice.voiceName} ({voice.lang})
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  };
 
   return (
     <div className="container">
@@ -90,6 +113,13 @@ export const OptionsApp: React.FC = () => {
                 {langOptions}
               </select>
             </div>
+          </section>
+
+          <section className="setting-group">
+            <h3>Preferred Voices</h3>
+            <p className="description" style={{ marginBottom: '15px' }}>Configure specific voices for your languages if available.</p>
+            <VoiceSelector lang={nativeLang} />
+            <VoiceSelector lang={learningLang} />
           </section>
 
           <section className="setting-group">
@@ -127,21 +157,6 @@ export const OptionsApp: React.FC = () => {
                 value={historyLimit}
                 onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 1)}
               />
-            </div>
-          </section>
-
-          <section className="setting-group">
-            <h3>Text-to-Speech</h3>
-            <div className="input-field">
-              <label>Preferred Voice</label>
-              <select value={preferredVoice} onChange={(e) => setPreferredVoice(e.target.value)}>
-                <option value="">System Default</option>
-                {voices.map((voice) => (
-                  <option key={voice.voiceName} value={voice.voiceName}>
-                    {voice.voiceName} ({voice.lang})
-                  </option>
-                ))}
-              </select>
             </div>
           </section>
         </main>
@@ -297,6 +312,15 @@ export const OptionsApp: React.FC = () => {
           color: #27ae60;
           font-weight: 600;
           font-size: 14px;
+        }
+        .voice-selector {
+          margin-bottom: 15px;
+        }
+        .voice-selector label {
+          display: block;
+          font-size: 13px;
+          font-weight: 600;
+          margin-bottom: 5px;
         }
       `}</style>
     </div>

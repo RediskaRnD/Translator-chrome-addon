@@ -24,6 +24,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [manualHeight, setManualHeight] = useState<number | null>(null);
   const [scale, setScale] = useState(1.0);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme || 'system');
+  const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>('off');
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const [originalText, setOriginalText] = useState(initialText);
@@ -33,14 +34,80 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [to, setTo] = useState("ru");
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load settings
+  const speak = (text: string, langCode: string) => {
+    chrome.runtime.sendMessage({ type: "SPEAK", payload: { text, langCode } });
+  };
+
+  const updateHistoryLength = useCallback(async () => {
+    const history = await CacheManager.getHistory();
+    setHistoryLength(history.length);
+  }, []);
+
+  const requestTranslation = useCallback((text: string, src: string, target: string) => {
+    if (!text) return;
+    chrome.runtime.sendMessage(
+      {
+        type: "TRANSLATE",
+        payload: { text, from: src, to: target },
+      },
+      (res) => {
+        if (res) {
+          const detected = res.detectedLanguage || "en";
+          chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback"], (settings) => {
+            const native = (settings.nativeLang as string) || "ru";
+            const learning = (settings.learningLang as string) || "en";
+            const autoPlayMode = settings.autoPlayback as 'off' | 'from' | 'to';
+
+            if (src === "auto" && detected === native) {
+              setFrom(detected);
+              setTo(learning);
+              return;
+            }
+
+            setTranslatedText(res.translatedText);
+            setDictionary(res.dictionary || []);
+            setHistoryIndex(0);
+            updateHistoryLength();
+
+            // Handle auto-playback
+            if (autoPlayMode === 'from') {
+              speak(text, detected || (src === 'auto' ? 'en' : src));
+            } else if (autoPlayMode === 'to') {
+              speak(res.translatedText, target);
+            }
+          });
+        }
+      }
+    );
+  }, [updateHistoryLength]);
+
+  // Load settings and page-specific languages ONCE on mount
   useEffect(() => {
-    chrome.storage.local.get(['uiScale', 'theme'], (settings) => {
+    const hostname = window.location.hostname;
+    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang'], (settings) => {
       if (settings.uiScale) setScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
+      if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
+      
+      const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
+      if (pageLangs) {
+        setFrom(pageLangs.from);
+        setTo(pageLangs.to);
+      } else if (settings.nativeLang) {
+        setTo(settings.nativeLang as string);
+      }
+      setIsInitialized(true);
     });
   }, []);
+
+  // Save page-specific languages when they change
+  useEffect(() => {
+    if (!isInitialized) return;
+    const hostname = window.location.hostname;
+    chrome.storage.local.set({ [`lang_${hostname}`]: { from, to } });
+  }, [from, to, isInitialized]);
 
   // Listen to system theme changes
   useEffect(() => {
@@ -60,10 +127,13 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   }, [propX, propY]);
 
-  // Update text and trigger translation when initialText prop changes
+  // Update text and trigger translation
   useEffect(() => {
-    setOriginalText(initialText);
-  }, [initialText]);
+    if (isInitialized && initialText) {
+      setOriginalText(initialText);
+      requestTranslation(initialText, from, to);
+    }
+  }, [initialText, from, to, isInitialized, requestTranslation]);
 
   // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -77,11 +147,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     e.preventDefault();
     setIsResizing(true);
   };
-
-  const updateHistoryLength = useCallback(async () => {
-    const history = await CacheManager.getHistory();
-    setHistoryLength(history.length);
-  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -122,48 +187,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       (container as any).isPinned = isPinned;
     }
   }, [isPinned]);
-
-  const requestTranslation = useCallback((text: string, src: string, target: string) => {
-    chrome.runtime.sendMessage(
-      {
-        type: "TRANSLATE",
-        payload: { text, from: src, to: target },
-      },
-      (res) => {
-        if (res) {
-          const detected = res.detectedLanguage || "en";
-          chrome.storage.local.get(["nativeLang", "learningLang"], (settings) => {
-            const native = (settings.nativeLang as string) || "ru";
-            const learning = (settings.learningLang as string) || "en";
-
-            if (src === "auto" && detected === native) {
-              setFrom(detected);
-              setTo(learning);
-              requestTranslation(text, detected, learning);
-              return;
-            }
-
-            setTranslatedText(res.translatedText);
-            setDictionary(res.dictionary || []);
-            setHistoryIndex(0);
-            updateHistoryLength();
-          });
-        }
-      }
-    );
-  }, [updateHistoryLength]);
-
-  useEffect(() => {
-    chrome.storage.local.get(["nativeLang"], (settings) => {
-      const native = (settings.nativeLang as string) || "ru";
-      setTo(native);
-      requestTranslation(initialText, "auto", native);
-    });
-  }, [initialText, requestTranslation]);
-
-  const speak = (text: string, langCode: string) => {
-    chrome.runtime.sendMessage({ type: "SPEAK", payload: { text, langCode } });
-  };
 
   const navigateHistory = async (direction: number) => {
     const history = await CacheManager.getHistory();
@@ -208,7 +231,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     setFrom(newFrom);
     setTo(newTo);
     setOriginalText(cleanWord);
-    requestTranslation(cleanWord, newFrom, newTo);
   };
 
   const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
@@ -247,6 +269,29 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
   };
 
+  const toggleAutoPlayback = () => {
+    const modes: ('off' | 'from' | 'to')[] = ['off', 'from', 'to'];
+    const nextMode = modes[(modes.indexOf(autoPlayback) + 1) % modes.length];
+    setAutoPlayback(nextMode);
+    chrome.storage.local.set({ autoPlayback: nextMode });
+  };
+
+  const getAutoPlaybackIcon = () => {
+    switch (autoPlayback) {
+      case 'from': return '🔊 A';
+      case 'to': return '🔊 B';
+      default: return '🔇';
+    }
+  };
+
+  const getAutoPlaybackTitle = () => {
+    switch (autoPlayback) {
+      case 'from': return 'Auto-play: Source';
+      case 'to': return 'Auto-play: Translation';
+      default: return 'Auto-play: Off';
+    }
+  };
+
   const popupStyle: React.CSSProperties = {
     left: pos.x,
     top: pos.y,
@@ -268,19 +313,22 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         <div className="lang-selects">
           <div className="select-wrapper" title={getLanguageName(from)}>
             <span className="lang-code-display">{getShortCode(from)}</span>
-            <select value={from} onChange={(e) => { setFrom(e.target.value); requestTranslation(originalText, e.target.value, to); }}>
+            <select value={from} onChange={(e) => setFrom(e.target.value)}>
               {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
             </select>
           </div>
           <span>→</span>
           <div className="select-wrapper" title={getLanguageName(to)}>
             <span className="lang-code-display">{getShortCode(to)}</span>
-            <select value={to} onChange={(e) => { setTo(e.target.value); requestTranslation(originalText, from, e.target.value); }}>
-              {Object.entries(LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+            <select value={to} onChange={(e) => setTo(e.target.value)}>
+              {Object.entries(LANGUAGES).filter(([code]) => code !== 'auto').map(([code, name]) => <option key={code} value={code}>{name}</option>)}
             </select>
           </div>
         </div>
         <div className="header-controls">
+          <button className="nav-btn auto-playback-btn" onClick={toggleAutoPlayback} title={getAutoPlaybackTitle()}>
+            {getAutoPlaybackIcon()}
+          </button>
           <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)} title="History Back">←</button>
           <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)} title="History Forward">→</button>
           <button className="nav-btn" onClick={openOptions} title="Settings">⚙️</button>
@@ -409,6 +457,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .nav-btn:hover { background: var(--btn-hover-bg); }
         .nav-btn:disabled { opacity: 0.5; cursor: default; }
         .nav-btn.pinned { border-color: var(--primary-color); }
+        .auto-playback-btn { min-width: 35px; font-weight: bold; font-size: 11px; }
         .content-scrollable {
           flex: 1;
           overflow-y: auto;
