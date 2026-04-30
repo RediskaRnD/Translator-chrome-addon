@@ -269,11 +269,25 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
   };
 
+  // Stop audio on unmount
+  useEffect(() => {
+    return () => {
+      chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
+    };
+  }, []);
+
   const toggleAutoPlayback = () => {
     const modes: ('off' | 'from' | 'to')[] = ['off', 'from', 'to'];
     const nextMode = modes[(modes.indexOf(autoPlayback) + 1) % modes.length];
     setAutoPlayback(nextMode);
     chrome.storage.local.set({ autoPlayback: nextMode });
+
+    // Play sample
+    if (nextMode === 'from' && originalText) {
+      speak(originalText, from === 'auto' ? 'en' : from);
+    } else if (nextMode === 'to' && translatedText) {
+      speak(translatedText, to);
+    }
   };
 
   const getAutoPlaybackIcon = () => {

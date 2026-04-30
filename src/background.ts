@@ -1,11 +1,12 @@
 import { Message } from "./shared/types";
 import { CacheManager } from "./shared/CacheManager";
+import { getAccentsForLanguage } from "./shared/accents";
 
 const VERSION = chrome.runtime.getManifest().version;
 
 // Set default settings on install
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['nativeLang', 'learningLang', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'preferredVoices'], (result) => {
+  chrome.storage.local.get(['nativeLang', 'learningLang', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'preferredVoices', 'preferredAccents'], (result) => {
     const defaults: any = {};
     if (!result.nativeLang) defaults.nativeLang = 'ru';
     if (!result.learningLang) defaults.learningLang = 'en';
@@ -14,6 +15,14 @@ chrome.runtime.onInstalled.addListener(() => {
     if (!result.theme) defaults.theme = 'system';
     if (!result.autoPlayback) defaults.autoPlayback = 'off';
     if (!result.preferredVoices) defaults.preferredVoices = {};
+    if (!result.preferredAccents) {
+      defaults.preferredAccents = {
+        'en': 'en-US',
+        'fr': 'fr-FR',
+        'es': 'es-ES',
+        'zh': 'zh-CN'
+      };
+    }
     
     if (Object.keys(defaults).length > 0) {
       chrome.storage.local.set(defaults);
@@ -42,6 +51,11 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    if (message.type === "STOP_AUDIO") {
+      handleStopAudio();
+      return false;
+    }
+
     if (message.type === "OPEN_OPTIONS") {
       chrome.runtime.openOptionsPage();
       return false;
@@ -50,21 +64,35 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
+function handleStopAudio() {
+  chrome.tts.stop();
+  chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
+}
+
 async function handleSpeak(text: string, langCode: string) {
   try {
-    const settings = await chrome.storage.local.get(['preferredVoices']);
+    const settings = await chrome.storage.local.get(['preferredVoices', 'preferredAccents']);
     const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
+    const preferredAccents = (settings.preferredAccents || {}) as Record<string, string>;
+    
     const preferredVoiceName = preferredVoices[langCode];
+    
+    // Determine the best accent code to use
+    let preferredAccent = preferredAccents[langCode];
+    if (!preferredAccent) {
+      const defaultAccents = getAccentsForLanguage(langCode);
+      preferredAccent = defaultAccents.length > 0 ? defaultAccents[0].code : langCode;
+    }
 
     if (preferredVoiceName) {
       chrome.tts.speak(text, {
         voiceName: preferredVoiceName,
-        lang: langCode,
+        lang: preferredAccent,
       });
       return;
     }
 
-    const cacheKey = `audio_${langCode}_${text.toLowerCase().trim()}`;
+    const cacheKey = `audio_${preferredAccent}_${text.toLowerCase().trim()}`;
     const cached = await chrome.storage.local.get(cacheKey);
     
     if (cached[cacheKey]) {
@@ -73,7 +101,8 @@ async function handleSpeak(text: string, langCode: string) {
       return;
     }
 
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${langCode}&client=tw-ob&q=${encodeURIComponent(text)}`;
+    // Use lowercase for tl parameter to improve compatibility with Google TTS
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${preferredAccent.toLowerCase()}&client=tw-ob&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
     

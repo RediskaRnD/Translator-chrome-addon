@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { LANGUAGES } from '../shared/languages';
 
+import { getAccentsForLanguage } from '../shared/accents';
+
 export const OptionsApp: React.FC = () => {
   const [nativeLang, setNativeLang] = useState('ru');
   const [learningLang, setLearningLang] = useState('en');
   const [preferredVoices, setPreferredVoices] = useState<Record<string, string>>({});
+  const [preferredAccents, setPreferredAccents] = useState<Record<string, string>>({});
   const [historyLimit, setHistoryLimit] = useState(20);
   const [uiScale, setUiScale] = useState(1.0);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
@@ -14,10 +17,11 @@ export const OptionsApp: React.FC = () => {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'historyLimit', 'uiScale', 'theme', 'autoPlayback'], (settings) => {
+    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'historyLimit', 'uiScale', 'theme', 'autoPlayback'], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.preferredVoices) setPreferredVoices(settings.preferredVoices as Record<string, string>);
+      if (settings.preferredAccents) setPreferredAccents(settings.preferredAccents as Record<string, string>);
       if (settings.historyLimit) setHistoryLimit(settings.historyLimit as number);
       if (settings.uiScale) setUiScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
@@ -51,6 +55,7 @@ export const OptionsApp: React.FC = () => {
       nativeLang,
       learningLang,
       preferredVoices,
+      preferredAccents,
       historyLimit,
       uiScale,
       theme,
@@ -68,21 +73,51 @@ export const OptionsApp: React.FC = () => {
     ));
 
   const VoiceSelector: React.FC<{ lang: string }> = ({ lang }) => {
-    const filteredVoices = voices.filter(v => v.lang?.startsWith(lang.split('-')[0]));
+    const accents = getAccentsForLanguage(lang);
+    const selectedAccent = preferredAccents[lang] || (accents.length > 0 ? accents[0].code : lang);
+    
+    // Filter voices by the selected accent if it exists, otherwise by the base lang
+    const filteredVoices = voices.filter(v => v.lang?.startsWith(selectedAccent.split('-')[0]));
+
     return (
       <div className="voice-selector">
-        <label>Voice for {LANGUAGES[lang as keyof typeof LANGUAGES] || lang}</label>
-        <select 
-          value={preferredVoices[lang] || ''} 
-          onChange={(e) => setPreferredVoices({ ...preferredVoices, [lang]: e.target.value })}
-        >
-          <option value="">System Default (Google TTS)</option>
-          {filteredVoices.map((voice) => (
-            <option key={voice.voiceName} value={voice.voiceName}>
-              {voice.voiceName} ({voice.lang})
-            </option>
-          ))}
-        </select>
+        <label>Configuration for {LANGUAGES[lang as keyof typeof LANGUAGES] || lang}</label>
+        
+        {accents.length > 1 && (
+          <div className="accent-field" style={{ marginBottom: '10px' }}>
+            <p className="description">Choose Accent:</p>
+            <select 
+              value={selectedAccent} 
+              onChange={(e) => {
+                const newAccent = e.target.value;
+                setPreferredAccents({ ...preferredAccents, [lang]: newAccent });
+                // Reset voice when accent changes to ensure compatibility
+                const newVoices = { ...preferredVoices };
+                delete newVoices[lang];
+                setPreferredVoices(newVoices);
+              }}
+            >
+              {accents.map(a => (
+                <option key={a.code} value={a.code}>{a.name} ({a.label})</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="voice-field">
+          <p className="description">Preferred Voice:</p>
+          <select 
+            value={preferredVoices[lang] || ''} 
+            onChange={(e) => setPreferredVoices({ ...preferredVoices, [lang]: e.target.value })}
+          >
+            <option value="">System Default</option>
+            {filteredVoices.map((voice) => (
+              <option key={voice.voiceName} value={voice.voiceName}>
+                {voice.voiceName} ({voice.lang})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     );
   };
