@@ -38,9 +38,10 @@ async function showPopup(text: string) {
 
   const isPinned = (container as any).isPinned;
 
-  // Get current scale to calculate boundaries correctly
-  const settings = await chrome.storage.local.get(['uiScale']);
+  // Get current scale and theme to calculate boundaries and prevent flash
+  const settings = await chrome.storage.local.get(['uiScale', 'theme']);
   const scale = (settings.uiScale as number) || 1.0;
+  const theme = (settings.theme as 'light' | 'dark' | 'system') || 'system';
 
   // Calculate smart position relative to viewport
   let x = 0;
@@ -89,6 +90,7 @@ async function showPopup(text: string) {
       initialText={text} 
       onClose={hidePopup} 
       version={version}
+      theme={theme}
     />
   );
 

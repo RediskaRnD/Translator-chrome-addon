@@ -10,9 +10,10 @@ interface PopupAppProps {
   initialText: string;
   onClose: () => void;
   version: string;
+  theme?: 'light' | 'dark' | 'system';
 }
 
-export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version }) => {
+export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version, theme: initialTheme }) => {
   const popupRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
   const [isPinned, setIsPinned] = useState(false);
@@ -22,7 +23,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [isResizing, setIsResizing] = useState(false);
   const [manualHeight, setManualHeight] = useState<number | null>(null);
   const [scale, setScale] = useState(1.0);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme || 'system');
+  const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const [originalText, setOriginalText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState("");
@@ -40,30 +42,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     });
   }, []);
 
-  // Apply theme to the popup element
+  // Listen to system theme changes
   useEffect(() => {
-    const popupElement = popupRef.current;
-    if (!popupElement) return;
-
-    const applyTheme = (currentTheme: 'light' | 'dark' | 'system') => {
-      if (currentTheme === 'system') {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        popupElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-      } else {
-        popupElement.setAttribute('data-theme', currentTheme);
-      }
-    };
-
-    applyTheme(theme);
-
     if (theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleChange = () => applyTheme('system');
+      const handleChange = (e: MediaQueryListEvent) => setSystemIsDark(e.matches);
       mediaQuery.addEventListener('change', handleChange);
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
-    return;
-  }, [theme]); // No need for translatedText anymore as popupElement is stable via ref
+    return undefined;
+  }, [theme]);
 
   // Update position if new coordinates are provided (not pinned)
   useEffect(() => {
@@ -272,8 +260,10 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     return code.split('-')[0].toUpperCase();
   };
 
+  const currentAppliedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
+
   return (
-    <div className="popup" style={popupStyle} ref={popupRef}>
+    <div className="popup" style={popupStyle} ref={popupRef} data-theme={currentAppliedTheme}>
       <div className="header" onMouseDown={handleMouseDown} style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
         <div className="lang-selects">
           <div className="select-wrapper" title={getLanguageName(from)}>

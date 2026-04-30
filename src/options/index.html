@@ -4,6 +4,57 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Translator Options</title>
+    <style>
+        :root {
+          --primary-color: #3498db;
+          --bg-color: #f5f7fa;
+          --card-bg: #ffffff;
+          --header-bg: #fcfcfd;
+          --text-color: #2c3e50;
+          --text-secondary: #7f8c8d;
+          --border-color: #e0e6ed;
+          --input-bg: #ffffff;
+        }
+
+        [data-theme='dark'] {
+          --bg-color: #1a1a1a;
+          --card-bg: #2d2d2d;
+          --header-bg: #252525;
+          --text-color: #e0e0e0;
+          --text-secondary: #a0a0a0;
+          --border-color: #404040;
+          --input-bg: #3d3d3d;
+        }
+
+        body {
+          background-color: var(--bg-color);
+          color: var(--text-color);
+          margin: 0;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+    </style>
+    <script>
+      (function() {
+        const applyTheme = (theme) => {
+          const root = document.documentElement;
+          if (theme === 'system') {
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+          } else {
+            root.setAttribute('data-theme', theme);
+          }
+        };
+
+        // Try to get theme from storage immediately
+        chrome.storage.local.get(['theme'], (settings) => {
+          applyTheme(settings.theme || 'system');
+        });
+
+        // Also apply system theme immediately as a fallback/default
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      })();
+    </script>
 </head>
 <body>
     <div id="app"></div>

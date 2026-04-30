@@ -8,6 +8,7 @@ export const OptionsApp: React.FC = () => {
   const [historyLimit, setHistoryLimit] = useState(20);
   const [uiScale, setUiScale] = useState(1.0);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+  const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
 
@@ -27,26 +28,21 @@ export const OptionsApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const applyTheme = (currentTheme: 'light' | 'dark' | 'system') => {
-      if (currentTheme === 'system') {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        root.setAttribute('data-theme', isDark ? 'dark' : 'light');
-      } else {
-        root.setAttribute('data-theme', currentTheme);
-      }
-    };
-
-    applyTheme(theme);
-
     if (theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleChange = () => applyTheme('system');
+      const handleChange = (e: MediaQueryListEvent) => setSystemIsDark(e.matches);
       mediaQuery.addEventListener('change', handleChange);
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
-    return;
+    return undefined;
   }, [theme]);
+
+  // Keep the document attribute in sync for components outside this React tree or for initial CSS
+  useEffect(() => {
+    const root = document.documentElement;
+    const currentAppliedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
+    root.setAttribute('data-theme', currentAppliedTheme);
+  }, [theme, systemIsDark]);
 
   const handleSave = () => {
     chrome.storage.local.set({
