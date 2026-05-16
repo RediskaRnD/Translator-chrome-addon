@@ -127,13 +127,20 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   }, [propX, propY]);
 
-  // Update text and trigger translation
+  // Sync initialText when it changes from the outside (new selection)
   useEffect(() => {
     if (isInitialized && initialText) {
       setOriginalText(initialText);
       requestTranslation(initialText, from, to);
     }
-  }, [initialText, from, to, isInitialized, requestTranslation]);
+  }, [initialText, isInitialized]); // Removed from/to from dependencies
+
+  // Handle manual language changes
+  useEffect(() => {
+    if (isInitialized && originalText) {
+      requestTranslation(originalText, from, to);
+    }
+  }, [from, to]); // Triggered when from/to change manually or via handleWordClick
 
   // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
