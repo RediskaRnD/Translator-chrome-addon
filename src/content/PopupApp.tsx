@@ -37,6 +37,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const isNavigatingHistory = React.useRef(false);
 
   /**
    * Helper to check if the extension context is still valid before calling Chrome APIs.
@@ -113,6 +114,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         setTo(settings.nativeLang as string);
       }
       setIsInitialized(true);
+      updateHistoryLength();
     });
   }, []);
 
@@ -144,6 +146,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   // Sync initialText when it changes from the outside (new selection)
   useEffect(() => {
     if (isInitialized && initialText) {
+      if (isNavigatingHistory.current) return;
       setOriginalText(initialText);
       requestTranslation(initialText, from, to);
     }
@@ -152,6 +155,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   // Handle manual language changes
   useEffect(() => {
     if (isInitialized && originalText) {
+      if (isNavigatingHistory.current) return;
       requestTranslation(originalText, from, to);
     }
   }, [from, to]); 
@@ -214,6 +218,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     const history = await CacheManager.getHistory();
     const newIndex = historyIndex + direction;
     if (newIndex >= 0 && newIndex < history.length) {
+      isNavigatingHistory.current = true;
       const item: HistoryItem = history[newIndex];
       setHistoryIndex(newIndex);
       setOriginalText(item.text);
@@ -238,6 +243,10 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       } else {
         setDictionary([]);
       }
+
+      setTimeout(() => {
+        isNavigatingHistory.current = false;
+      }, 100);
     }
   };
 
