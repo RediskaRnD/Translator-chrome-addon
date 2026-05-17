@@ -1,6 +1,6 @@
 {
   "name": "translator",
-  "version": "1.0.81",
+  "version": "1.0.83",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "react-icons": "^5.6.0"
   }
 }

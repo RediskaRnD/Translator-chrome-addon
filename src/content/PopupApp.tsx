@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { IoSettingsOutline, IoCaretForwardOutline, IoCaretBack, IoVolumeMediumOutline, IoVolumeMuteOutline } from "react-icons/io5";
+import { BsPin, BsPinAngle } from "react-icons/bs";
 import { LANGUAGES, getLanguageName } from "../shared/languages";
 import { getAccentsForLanguage } from "../shared/accents";
 import { CacheManager } from "../shared/CacheManager";
@@ -255,7 +257,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
     const accents = getAccentsForLanguage(lang);
-    const list = accents.length > 0 ? accents : [{ code: lang, label: "🔊" }];
+    const list: { code: string, label: React.ReactNode }[] = accents.length > 0 ? accents : [{ code: lang, label: <IoVolumeMediumOutline /> }];
 
     return (
       <div className="line" key={key || text}>
@@ -319,9 +321,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const getAutoPlaybackIcon = () => {
     switch (autoPlayback) {
-      case 'from': return '🔊 A';
-      case 'to': return '🔊 B';
-      default: return '🔇';
+      case 'from': return <><IoVolumeMediumOutline /> <small style={{ marginLeft: '2px' }}>A</small></>;
+      case 'to': return <><IoVolumeMediumOutline /> <small style={{ marginLeft: '2px' }}>B</small></>;
+      default: return <IoVolumeMuteOutline />;
     }
   };
 
@@ -370,16 +372,22 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           <button className="nav-btn auto-playback-btn" onClick={toggleAutoPlayback} title={getAutoPlaybackTitle()}>
             {getAutoPlaybackIcon()}
           </button>
-          <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)} title="History Back">←</button>
-          <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)} title="History Forward">→</button>
-          <button className="nav-btn" onClick={openOptions} title="Settings">⚙️</button>
+          <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)} title="History Back">
+            <IoCaretBack />
+          </button>
+          <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)} title="History Forward">
+            <IoCaretForwardOutline />
+          </button>
+          <button className="nav-btn" onClick={openOptions} title="Settings">
+            <IoSettingsOutline />
+          </button>
           <button
             className={`nav-btn ${isPinned ? 'pinned' : ''}`}
             onClick={() => setIsPinned(!isPinned)}
             title={isPinned ? 'Unpin' : 'Pin'}
-            style={{ color: isPinned ? '#3498db' : '#7f8c8d', fontWeight: isPinned ? 'bold' : 'normal' }}
+            style={{ color: isPinned ? '#3498db' : '#7f8c8d' }}
           >
-            📌
+            {isPinned ? <BsPin /> : <BsPinAngle />}
           </button>
         </div>
       </div>
@@ -488,17 +496,19 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           opacity: 0;
           cursor: pointer;
         }
-        .header-controls { display: flex; align-items: center; gap: 2px; }
+        .header-controls { display: flex; align-items: center; gap: 4px; }
         .nav-btn {
-          background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 3px;
-          padding: 2px 5px; cursor: pointer; font-size: 13px; color: var(--text-secondary);
+          background: transparent; border: 1px solid transparent; border-radius: 4px;
+          padding: 4px; cursor: pointer; font-size: 18px; color: var(--text-secondary);
           user-select: none;
           display: flex; align-items: center; justify-content: center;
+          transition: background 0.2s, color 0.2s;
         }
-        .nav-btn:hover { background: var(--btn-hover-bg); }
-        .nav-btn:disabled { opacity: 0.5; cursor: default; }
-        .nav-btn.pinned { border-color: var(--primary-color); }
-        .auto-playback-btn { min-width: 35px; font-weight: bold; font-size: 11px; }
+        .nav-btn:hover { background: var(--btn-hover-bg); color: var(--primary-color); }
+        .nav-btn:disabled { opacity: 0.3; cursor: default; }
+        .nav-btn.pinned { color: var(--primary-color); }
+        .auto-playback-btn { font-size: 16px; padding: 4px 6px; }
+        .auto-playback-btn small { font-size: 10px; font-weight: bold; margin-bottom: -4px; }
         .content-scrollable {
           flex: 1;
           overflow-y: auto;
