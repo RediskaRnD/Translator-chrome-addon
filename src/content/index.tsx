@@ -7,9 +7,19 @@ let container: HTMLDivElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
 let reactRoot: Root | null = null;
 
-const version = chrome.runtime.getManifest().version;
+/**
+ * Checks if the extension context is still valid.
+ * When the extension is updated or reloaded, the content script context becomes invalidated.
+ */
+function isContextValid() {
+  return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+}
+
+const version = isContextValid() ? chrome.runtime.getManifest().version : 'unknown';
 
 function initContainer() {
+  if (!isContextValid()) return;
+
   if (!container) {
     container = document.createElement('div');
     container.className = 'translator-popup-container';
@@ -35,6 +45,11 @@ function initContainer() {
 }
 
 async function showPopup(text: string, rect: DOMRect) {
+  if (!isContextValid()) {
+    console.warn('Quick Translator: Extension context invalidated. Please refresh the page.');
+    return;
+  }
+
   initContainer();
   if (!shadowRoot) return;
 
@@ -162,6 +177,8 @@ function getSelectionData() {
 }
 
 document.addEventListener('mouseup', (event) => {
+  if (!isContextValid()) return;
+
   const path = event.composedPath();
   const isInsidePopup = path.some(el => 
     el instanceof HTMLElement && el.classList.contains('translator-popup-container')

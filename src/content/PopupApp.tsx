@@ -36,26 +36,36 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [historyLength, setHistoryLength] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  /**
+   * Helper to check if the extension context is still valid before calling Chrome APIs.
+   */
+  const isContextValid = () => {
+    return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+  };
+
   const speak = (text: string, langCode: string) => {
+    if (!isContextValid()) return;
     chrome.runtime.sendMessage({ type: "SPEAK", payload: { text, langCode } });
   };
 
   const updateHistoryLength = useCallback(async () => {
+    if (!isContextValid()) return;
     const history = await CacheManager.getHistory();
     setHistoryLength(history.length);
   }, []);
 
   const requestTranslation = useCallback((text: string, src: string, target: string) => {
-    if (!text) return;
+    if (!text || !isContextValid()) return;
     chrome.runtime.sendMessage(
       {
         type: "TRANSLATE",
         payload: { text, from: src, to: target },
       },
       (res) => {
-        if (res) {
+        if (res && isContextValid()) {
           const detected = res.detectedLanguage || "en";
           chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback"], (settings) => {
+            if (!isContextValid()) return;
             const native = (settings.nativeLang as string) || "ru";
             const learning = (settings.learningLang as string) || "en";
             const autoPlayMode = settings.autoPlayback as 'off' | 'from' | 'to';
@@ -85,12 +95,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   // Load settings and page-specific languages ONCE on mount
   useEffect(() => {
+    if (!isContextValid()) return;
     const hostname = window.location.hostname;
     chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang'], (settings) => {
+      if (!isContextValid()) return;
       if (settings.uiScale) setScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
-      
+
       const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
       if (pageLangs) {
         setFrom(pageLangs.from);
@@ -104,7 +116,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   // Save page-specific languages when they change
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || !isContextValid()) return;
     const hostname = window.location.hostname;
     chrome.storage.local.set({ [`lang_${hostname}`]: { from, to } });
   }, [from, to, isInitialized]);
@@ -133,14 +145,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       setOriginalText(initialText);
       requestTranslation(initialText, from, to);
     }
-  }, [initialText, isInitialized]); // Removed from/to from dependencies
+  }, [initialText, isInitialized]); 
 
   // Handle manual language changes
   useEffect(() => {
     if (isInitialized && originalText) {
       requestTranslation(originalText, from, to);
     }
-  }, [from, to]); // Triggered when from/to change manually or via handleWordClick
+  }, [from, to]); 
 
   // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -196,6 +208,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   }, [isPinned]);
 
   const navigateHistory = async (direction: number) => {
+    if (!isContextValid()) return;
     const history = await CacheManager.getHistory();
     const newIndex = historyIndex + direction;
     if (newIndex >= 0 && newIndex < history.length) {
@@ -273,13 +286,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   };
 
   const openOptions = () => {
+    if (!isContextValid()) return;
     chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
   };
 
   // Stop audio on unmount
   useEffect(() => {
     return () => {
-      chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
+      if (isContextValid()) {
+        chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
+      }
     };
   }, []);
 
@@ -287,7 +303,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     const modes: ('off' | 'from' | 'to')[] = ['off', 'from', 'to'];
     const nextMode = modes[(modes.indexOf(autoPlayback) + 1) % modes.length];
     setAutoPlayback(nextMode);
-    chrome.storage.local.set({ autoPlayback: nextMode });
+
+    if (isContextValid()) {
+      chrome.storage.local.set({ autoPlayback: nextMode });
+      chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
+    }
 
     // Play sample
     if (nextMode === 'from' && originalText) {
