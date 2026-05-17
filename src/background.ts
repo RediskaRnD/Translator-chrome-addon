@@ -6,63 +6,74 @@ const VERSION = chrome.runtime.getManifest().version;
 
 // Set default settings on install
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['nativeLang', 'learningLang', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'preferredVoices', 'preferredAccents'], (result) => {
-    const defaults: any = {};
-    if (!result.nativeLang) defaults.nativeLang = 'ru';
-    if (!result.learningLang) defaults.learningLang = 'en';
-    if (!result.historyLimit) defaults.historyLimit = 20;
-    if (result.uiScale === undefined) defaults.uiScale = 1.0;
-    if (!result.theme) defaults.theme = 'system';
-    if (!result.autoPlayback) defaults.autoPlayback = 'off';
-    if (!result.preferredVoices) defaults.preferredVoices = {};
-    if (!result.preferredAccents) {
-      defaults.preferredAccents = {
-        'en': 'en-US',
-        'fr': 'fr-FR',
-        'es': 'es-ES',
-        'zh': 'zh-CN'
-      };
-    }
-    
-    if (Object.keys(defaults).length > 0) {
-      chrome.storage.local.set(defaults);
-    }
-  });
+  chrome.storage.local.get(
+    [
+      "nativeLang",
+      "learningLang",
+      "historyLimit",
+      "uiScale",
+      "theme",
+      "autoPlayback",
+      "preferredVoices",
+      "preferredAccents",
+    ],
+    (result) => {
+      const defaults: any = {};
+      if (!result.nativeLang) defaults.nativeLang = "ru";
+      if (!result.learningLang) defaults.learningLang = "en";
+      if (!result.historyLimit) defaults.historyLimit = 20;
+      if (result.uiScale === undefined) defaults.uiScale = 1.0;
+      if (!result.theme) defaults.theme = "system";
+      if (!result.autoPlayback) defaults.autoPlayback = "off";
+      if (result.autoPlaybackLimit === undefined) defaults.autoPlaybackLimit = 100;
+      if (!result.preferredVoices) defaults.preferredVoices = {};
+      if (!result.preferredAccents) {
+        defaults.preferredAccents = {
+          en: "en-US",
+          fr: "fr-FR",
+          es: "es-ES",
+          zh: "zh-CN",
+        };
+      }
+
+      if (Object.keys(defaults).length > 0) {
+        chrome.storage.local.set(defaults);
+      }
+    },
+  );
 });
 
 // Красивый лог инициализации
 console.log(
   `%c--- SYSTEM LOADED V${VERSION} ---`,
-  "background: #222; color: #bada55; font-size: 20px; font-weight: bold; padding: 4px; border-radius: 4px;"
+  "background: #222; color: #bada55; font-size: 20px; font-weight: bold; padding: 4px; border-radius: 4px;",
 );
 
-chrome.runtime.onMessage.addListener(
-  (message: Message, _sender, sendResponse) => {
-    if (message.type === "TRANSLATE") {
-      const { text, from, to } = message.payload;
-      handleTranslation(text, from, to).then(sendResponse);
-      return true;
-    }
+chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
+  if (message.type === "TRANSLATE") {
+    const { text, from, to } = message.payload;
+    handleTranslation(text, from, to).then(sendResponse);
+    return true;
+  }
 
-    if (message.type === "SPEAK") {
-      const { text, langCode } = message.payload;
-      handleSpeak(text, langCode);
-      sendResponse({ success: true, version: VERSION });
-      return false;
-    }
-
-    if (message.type === "STOP_AUDIO") {
-      handleStopAudio();
-      return false;
-    }
-
-    if (message.type === "OPEN_OPTIONS") {
-      chrome.runtime.openOptionsPage();
-      return false;
-    }
+  if (message.type === "SPEAK") {
+    const { text, langCode } = message.payload;
+    handleSpeak(text, langCode);
+    sendResponse({ success: true, version: VERSION });
     return false;
-  },
-);
+  }
+
+  if (message.type === "STOP_AUDIO") {
+    handleStopAudio();
+    return false;
+  }
+
+  if (message.type === "OPEN_OPTIONS") {
+    chrome.runtime.openOptionsPage();
+    return false;
+  }
+  return false;
+});
 
 function handleStopAudio() {
   chrome.tts.stop();
@@ -71,12 +82,12 @@ function handleStopAudio() {
 
 async function handleSpeak(text: string, langCode: string) {
   try {
-    const settings = await chrome.storage.local.get(['preferredVoices', 'preferredAccents']);
+    const settings = await chrome.storage.local.get(["preferredVoices", "preferredAccents"]);
     const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
     const preferredAccents = (settings.preferredAccents || {}) as Record<string, string>;
-    
+
     const preferredVoiceName = preferredVoices[langCode];
-    
+
     // Determine the best accent code to use
     let preferredAccent = preferredAccents[langCode];
     if (!preferredAccent) {
@@ -94,7 +105,7 @@ async function handleSpeak(text: string, langCode: string) {
 
     const cacheKey = `audio_${preferredAccent}_${text.toLowerCase().trim()}`;
     const cached = await chrome.storage.local.get(cacheKey);
-    
+
     if (cached[cacheKey]) {
       console.log("Using cached audio for:", text);
       await playAudio(cached[cacheKey] as string);
@@ -105,7 +116,7 @@ async function handleSpeak(text: string, langCode: string) {
     const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${preferredAccent.toLowerCase()}&client=tw-ob&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
-    
+
     const uint8Array = new Uint8Array(arrayBuffer);
     let binary = "";
     for (let i = 0; i < uint8Array.byteLength; i++) {
@@ -148,7 +159,13 @@ async function playAudio(dataUrl: string) {
 async function handleTranslation(text: string, from: string, to: string) {
   const cached = await CacheManager.getTranslation(text, from, to);
   if (cached) {
-    try { return JSON.parse(cached); } catch (e) { return { translatedText: cached, alternatives: [] }; }
+    // Refresh history position
+    await CacheManager.addToHistory(text, from, to, cached);
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      return { translatedText: cached, alternatives: [] };
+    }
   }
   const result = await translate(text, from, to);
   if (result.translatedText && !result.translatedText.startsWith("Error")) {
@@ -163,9 +180,9 @@ async function translate(text: string, from: string, to: string) {
     const response = await fetch(url);
     const data = await response.json();
     const mainTranslation = data[0].map((item: any) => item[0]).join("");
-    
+
     // Group alternatives by parts of speech
-    const dictionary: { pos: string, terms: string[] }[] = [];
+    const dictionary: { pos: string; terms: string[] }[] = [];
     if (data[1]) {
       data[1].forEach((item: any) => {
         const pos = item[0]; // Part of speech (e.g., "noun", "verb")
@@ -174,10 +191,10 @@ async function translate(text: string, from: string, to: string) {
       });
     }
 
-    return { 
-      translatedText: mainTranslation, 
+    return {
+      translatedText: mainTranslation,
       dictionary: dictionary,
-      detectedLanguage: data[2] 
+      detectedLanguage: data[2],
     };
   } catch (error) {
     return { translatedText: "Error", dictionary: [] };

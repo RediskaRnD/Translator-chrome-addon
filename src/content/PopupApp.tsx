@@ -67,11 +67,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       (res) => {
         if (res && isContextValid()) {
           const detected = res.detectedLanguage || "en";
-          chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback"], (settings) => {
+          chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback", "autoPlaybackLimit"], (settings) => {
             if (!isContextValid()) return;
             const native = (settings.nativeLang as string) || "ru";
             const learning = (settings.learningLang as string) || "en";
             const autoPlayMode = settings.autoPlayback as 'off' | 'from' | 'to';
+            const autoLimit = (settings.autoPlaybackLimit as number) || 100;
 
             if (src === "auto" && detected === native) {
               setFrom(detected);
@@ -85,10 +86,13 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
             updateHistoryLength();
 
             // Handle auto-playback
-            if (autoPlayMode === 'from') {
-              speak(text, detected || (src === 'auto' ? 'en' : src));
-            } else if (autoPlayMode === 'to') {
-              speak(res.translatedText, target);
+            if (autoPlayMode !== 'off') {
+              const textToSpeak = autoPlayMode === 'from' ? text : res.translatedText;
+              const langToSpeak = autoPlayMode === 'from' ? (detected || (src === 'auto' ? 'en' : src)) : target;
+
+              if (textToSpeak.length <= autoLimit) {
+                speak(textToSpeak, langToSpeak);
+              }
             }
           });
         }
@@ -148,7 +152,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     if (initialText) {
       setOriginalText(initialText);
     }
-  }, [initialText]); 
+  }, [initialText]);
 
   // Main translation logic: triggers when word or languages change
   useEffect(() => {
@@ -156,7 +160,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       if (isNavigatingHistory.current) return;
       requestTranslation(originalText, from, to);
     }
-  }, [originalText, from, to, isInitialized]); 
+  }, [originalText, from, to, isInitialized]);
 
   // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -241,6 +245,21 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       } else {
         setDictionary([]);
       }
+
+      // Trigger audio on history navigation if enabled
+      chrome.storage.local.get(["autoPlayback", "autoPlaybackLimit"], (settings) => {
+        const autoPlayMode = settings.autoPlayback as 'off' | 'from' | 'to';
+        const autoLimit = (settings.autoPlaybackLimit as number) || 100;
+
+        if (autoPlayMode !== 'off') {
+          const textToSpeak = autoPlayMode === 'from' ? item.text : (data.translatedText || "");
+          const langToSpeak = autoPlayMode === 'from' ? item.from : item.to;
+
+          if (textToSpeak && textToSpeak.length <= autoLimit) {
+            speak(textToSpeak, langToSpeak);
+          }
+        }
+      });
 
       setTimeout(() => {
         isNavigatingHistory.current = false;

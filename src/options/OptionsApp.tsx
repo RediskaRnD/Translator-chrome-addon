@@ -12,12 +12,13 @@ export const OptionsApp: React.FC = () => {
   const [uiScale, setUiScale] = useState(1.0);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>('off');
+  const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(100);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'historyLimit', 'uiScale', 'theme', 'autoPlayback'], (settings) => {
+    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit'], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.preferredVoices) setPreferredVoices(settings.preferredVoices as Record<string, string>);
@@ -26,6 +27,7 @@ export const OptionsApp: React.FC = () => {
       if (settings.uiScale) setUiScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
+      if (settings.autoPlaybackLimit !== undefined) setAutoPlaybackLimit(settings.autoPlaybackLimit as number);
     });
 
     chrome.tts.getVoices((v) => {
@@ -59,7 +61,8 @@ export const OptionsApp: React.FC = () => {
       historyLimit,
       uiScale,
       theme,
-      autoPlayback
+      autoPlayback,
+      autoPlaybackLimit
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -191,6 +194,18 @@ export const OptionsApp: React.FC = () => {
                 max="100"
                 value={historyLimit}
                 onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 1)}
+              />
+            </div>
+
+            <div className="input-field">
+              <label>Auto-play character limit</label>
+              <p className="description">Don't auto-play if text is longer than this.</p>
+              <input
+                type="number"
+                min="10"
+                max="1000"
+                value={autoPlaybackLimit}
+                onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || 100)}
               />
             </div>
           </section>

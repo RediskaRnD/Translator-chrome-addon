@@ -20,7 +20,7 @@ export class CacheManager {
     await this.addToHistory(text, from, to, translation);
   }
 
-  private static async addToHistory(text: string, from: string, to: string, translation: string) {
+  public static async addToHistory(text: string, from: string, to: string, translation: string) {
     const historyData = await chrome.storage.local.get([this.HISTORY_KEY, 'historyLimit']);
     let history = (historyData[this.HISTORY_KEY] as HistoryItem[]) || [];
     const limit = (historyData.historyLimit as number) || 20;
