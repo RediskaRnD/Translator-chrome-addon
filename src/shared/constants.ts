@@ -1,0 +1,18 @@
+export const DEFAULT_SETTINGS = {
+  NATIVE_LANG: 'ru',
+  LEARNING_LANG: 'en',
+  HISTORY_LIMIT: 20,
+  UI_SCALE: 1.0,
+  THEME: 'system' as const,
+  AUTO_PLAYBACK: 'off' as const,
+  AUTO_PLAYBACK_LIMIT: 100,
+};
+
+export const UI_CONSTANTS = {
+  MIN_POPUP_HEIGHT: 150,
+  MAX_POPUP_HEIGHT: 555,
+  MIN_POPUP_WIDTH: 250,
+  DEFAULT_POPUP_WIDTH: 350,
+  MIN_UI_SCALE: 0.8,
+  MAX_UI_SCALE: 1.5,
+};
