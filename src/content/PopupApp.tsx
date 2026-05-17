@@ -5,6 +5,7 @@ import { LANGUAGES, getLanguageName } from "../shared/languages";
 import { getAccentsForLanguage } from "../shared/accents";
 import { CacheManager } from "../shared/CacheManager";
 import { HistoryItem } from "../shared/types";
+import { DEFAULT_SETTINGS, UI_CONSTANTS } from '../shared/constants';
 
 interface PopupAppProps {
   x?: number;
@@ -24,16 +25,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const [isResizing, setIsResizing] = useState(false);
   const [manualHeight, setManualHeight] = useState<number | null>(null);
-  const [scale, setScale] = useState(1.0);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme || 'system');
-  const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>('off');
+  const [scale, setScale] = useState(DEFAULT_SETTINGS.UI_SCALE);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme || DEFAULT_SETTINGS.THEME);
+  const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const [originalText, setOriginalText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState("");
   const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
   const [from, setFrom] = useState("auto");
-  const [to, setTo] = useState("ru");
+  const [to, setTo] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -69,10 +70,10 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           const detected = res.detectedLanguage || "en";
           chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback", "autoPlaybackLimit"], (settings) => {
             if (!isContextValid()) return;
-            const native = (settings.nativeLang as string) || "ru";
-            const learning = (settings.learningLang as string) || "en";
-            const autoPlayMode = settings.autoPlayback as 'off' | 'from' | 'to';
-            const autoLimit = (settings.autoPlaybackLimit as number) || 100;
+            const native = (settings.nativeLang as string) || DEFAULT_SETTINGS.NATIVE_LANG;
+            const learning = (settings.learningLang as string) || DEFAULT_SETTINGS.LEARNING_LANG;
+            const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
+            const autoLimit = (settings.autoPlaybackLimit as number) !== undefined ? (settings.autoPlaybackLimit as number) : DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
 
             if (src === "auto" && detected === native) {
               setFrom(detected);
@@ -188,7 +189,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         if (popupElement) {
           const rect = popupElement.getBoundingClientRect();
           const newHeight = (e.clientY - rect.top) / scale;
-          setManualHeight(Math.max(150, newHeight));
+          setManualHeight(Math.max(UI_CONSTANTS.MIN_POPUP_HEIGHT, newHeight));
         }
       }
     };
@@ -248,8 +249,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
       // Trigger audio on history navigation if enabled
       chrome.storage.local.get(["autoPlayback", "autoPlaybackLimit"], (settings) => {
-        const autoPlayMode = settings.autoPlayback as 'off' | 'from' | 'to';
-        const autoLimit = (settings.autoPlaybackLimit as number) || 100;
+        const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
+        const autoLimit = (settings.autoPlaybackLimit as number) !== undefined ? (settings.autoPlaybackLimit as number) : DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
 
         if (autoPlayMode !== 'off') {
           const textToSpeak = autoPlayMode === 'from' ? item.text : (data.translatedText || "");
@@ -266,7 +267,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       }, 100);
     }
   };
-
   const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
   const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
 
@@ -504,7 +504,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
         .header {
           background: var(--header-bg);
-          padding: 6px 10px;
+          padding: 2px 10px;
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -525,7 +525,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .header-controls { display: flex; align-items: center; gap: 4px; }
         .nav-btn {
           background: transparent; border: 1px solid transparent; border-radius: 4px;
-          padding: 4px; cursor: pointer; font-size: 18px; color: var(--text-secondary);
+          cursor: pointer; font-size: 22px; color: var(--text-secondary);
           user-select: none;
           display: flex; align-items: center; justify-content: center;
           transition: background 0.2s, color 0.2s;
@@ -533,7 +533,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .nav-btn:hover { background: var(--btn-hover-bg); color: var(--primary-color); }
         .nav-btn:disabled { opacity: 0.3; cursor: default; }
         .nav-btn.pinned { color: var(--primary-color); }
-        .auto-playback-btn { font-size: 16px; padding: 4px 6px; }
+        .auto-playback-btn { font-size: 22px;}
         .auto-playback-btn small { font-size: 10px; font-weight: bold; margin-bottom: -4px; }
         .content-scrollable {
           flex: 1;

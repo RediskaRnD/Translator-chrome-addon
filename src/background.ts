@@ -1,6 +1,7 @@
 import { Message } from "./shared/types";
 import { CacheManager } from "./shared/CacheManager";
 import { getAccentsForLanguage } from "./shared/accents";
+import { DEFAULT_SETTINGS } from "./shared/constants";
 
 const VERSION = chrome.runtime.getManifest().version;
 
@@ -16,16 +17,17 @@ chrome.runtime.onInstalled.addListener(() => {
       "autoPlayback",
       "preferredVoices",
       "preferredAccents",
+      "autoPlaybackLimit",
     ],
     (result) => {
       const defaults: any = {};
-      if (!result.nativeLang) defaults.nativeLang = "ru";
-      if (!result.learningLang) defaults.learningLang = "en";
-      if (!result.historyLimit) defaults.historyLimit = 20;
-      if (result.uiScale === undefined) defaults.uiScale = 1.0;
-      if (!result.theme) defaults.theme = "system";
-      if (!result.autoPlayback) defaults.autoPlayback = "off";
-      if (result.autoPlaybackLimit === undefined) defaults.autoPlaybackLimit = 100;
+      if (!result.nativeLang) defaults.nativeLang = DEFAULT_SETTINGS.NATIVE_LANG;
+      if (!result.learningLang) defaults.learningLang = DEFAULT_SETTINGS.LEARNING_LANG;
+      if (!result.historyLimit) defaults.historyLimit = DEFAULT_SETTINGS.HISTORY_LIMIT;
+      if (result.uiScale === undefined) defaults.uiScale = DEFAULT_SETTINGS.UI_SCALE;
+      if (!result.theme) defaults.theme = DEFAULT_SETTINGS.THEME;
+      if (!result.autoPlayback) defaults.autoPlayback = DEFAULT_SETTINGS.AUTO_PLAYBACK;
+      if (result.autoPlaybackLimit === undefined) defaults.autoPlaybackLimit = DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
       if (!result.preferredVoices) defaults.preferredVoices = {};
       if (!result.preferredAccents) {
         defaults.preferredAccents = {

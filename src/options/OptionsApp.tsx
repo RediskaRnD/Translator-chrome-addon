@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { LANGUAGES } from '../shared/languages';
-
 import { getAccentsForLanguage } from '../shared/accents';
+import { DEFAULT_SETTINGS, UI_CONSTANTS } from '../shared/constants';
 
 export const OptionsApp: React.FC = () => {
-  const [nativeLang, setNativeLang] = useState('ru');
-  const [learningLang, setLearningLang] = useState('en');
+  const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
+  const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [preferredVoices, setPreferredVoices] = useState<Record<string, string>>({});
   const [preferredAccents, setPreferredAccents] = useState<Record<string, string>>({});
-  const [historyLimit, setHistoryLimit] = useState(20);
-  const [uiScale, setUiScale] = useState(1.0);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
-  const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>('off');
-  const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(100);
+  const [historyLimit, setHistoryLimit] = useState(DEFAULT_SETTINGS.HISTORY_LIMIT);
+  const [uiScale, setUiScale] = useState(DEFAULT_SETTINGS.UI_SCALE);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(DEFAULT_SETTINGS.THEME);
+  const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
+  const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
@@ -177,8 +177,8 @@ export const OptionsApp: React.FC = () => {
               <p className="description">Adjust the size of the translation window.</p>
               <input
                 type="range"
-                min="0.8"
-                max="1.5"
+                min={UI_CONSTANTS.MIN_UI_SCALE}
+                max={UI_CONSTANTS.MAX_UI_SCALE}
                 step="0.1"
                 value={uiScale}
                 onChange={(e) => setUiScale(parseFloat(e.target.value))}
@@ -193,7 +193,7 @@ export const OptionsApp: React.FC = () => {
                 min="1"
                 max="100"
                 value={historyLimit}
-                onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 1)}
+                onChange={(e) => setHistoryLimit(parseInt(e.target.value) || DEFAULT_SETTINGS.HISTORY_LIMIT)}
               />
             </div>
 
@@ -205,7 +205,7 @@ export const OptionsApp: React.FC = () => {
                 min="10"
                 max="1000"
                 value={autoPlaybackLimit}
-                onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || 100)}
+                onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT)}
               />
             </div>
           </section>
