@@ -30,7 +30,7 @@ export interface HistoryItem {
   timestamp: number;
 }
 
-export type MessageType = 'TRANSLATE' | 'SPEAK' | 'STOP_AUDIO' | 'PLAY_SAMPLE' | 'GET_VOICES' | 'PING' | 'OPEN_OPTIONS';
+export type MessageType = 'TRANSLATE' | 'SPEAK' | 'STOP_AUDIO' | 'PLAY_SAMPLE' | 'GET_VOICES' | 'PING' | 'OPEN_OPTIONS' | 'CLEAR_CACHE';
 
 export interface Message {
   type: MessageType;

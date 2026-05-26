@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LANGUAGES } from '../shared/languages';
 import { getAccentsForLanguage } from '../shared/accents';
-import { DEFAULT_SETTINGS, UI_CONSTANTS } from '../shared/constants';
+import { DEFAULT_SETTINGS, UI_CONSTANTS, DEFAULT_HOTKEYS } from '../shared/constants';
 
 export const OptionsApp: React.FC = () => {
   const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
@@ -13,12 +13,14 @@ export const OptionsApp: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(DEFAULT_SETTINGS.THEME);
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
   const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT);
+  const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
+  const [recordingKey, setRecordingKey] = useState<string | null>(null);
 
   useEffect(() => {
-    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit'], (settings) => {
+    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit', 'hotkeys'], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.preferredVoices) setPreferredVoices(settings.preferredVoices as Record<string, string>);
@@ -28,12 +30,28 @@ export const OptionsApp: React.FC = () => {
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
       if (settings.autoPlaybackLimit !== undefined) setAutoPlaybackLimit(settings.autoPlaybackLimit as number);
+      if (settings.hotkeys) setHotkeys(settings.hotkeys as Record<string, string>);
     });
 
     chrome.tts.getVoices((v) => {
       setVoices(v);
     });
   }, []);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (recordingKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        setHotkeys({ ...hotkeys, [recordingKey]: e.code });
+        setRecordingKey(null);
+      }
+    };
+    if (recordingKey) {
+      window.addEventListener('keydown', handleGlobalKeyDown, true);
+    }
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [recordingKey, hotkeys]);
 
   useEffect(() => {
     if (theme === 'system') {
@@ -62,11 +80,23 @@ export const OptionsApp: React.FC = () => {
       uiScale,
       theme,
       autoPlayback,
-      autoPlaybackLimit
+      autoPlaybackLimit,
+      hotkeys
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
     });
+  };
+
+  const handleClearCache = () => {
+    if (confirm('Are you sure you want to clear all translation history and audio cache?')) {
+      chrome.runtime.sendMessage({ type: "CLEAR_CACHE" }, (res) => {
+        if (res && res.success) {
+          setStatus('Cache cleared successfully!');
+          setTimeout(() => setStatus(''), 3000);
+        }
+      });
+    }
   };
 
   const langOptions = Object.entries(LANGUAGES)
@@ -209,12 +239,35 @@ export const OptionsApp: React.FC = () => {
               />
             </div>
           </section>
+
+          <section className="setting-group">
+            <h3>Hotkeys</h3>
+            <p className="description">Click on a key code to record a new hotkey.</p>
+            <div className="hotkey-grid">
+              {Object.entries(hotkeys).map(([action, code]) => (
+                <div key={action} className="hotkey-item">
+                  <span className="hotkey-label">{action.replace('_', ' ')}</span>
+                  <button 
+                    className={`hotkey-record-btn ${recordingKey === action ? 'recording' : ''}`}
+                    onClick={() => setRecordingKey(action)}
+                  >
+                    {recordingKey === action ? 'Press any key...' : code || 'None'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
         </main>
 
         <footer className="card-footer">
-          <button className="save-btn" onClick={handleSave}>
-            Save Configuration
-          </button>
+          <div className="footer-actions">
+            <button className="save-btn" onClick={handleSave}>
+              Save Configuration
+            </button>
+            <button className="clear-btn" onClick={handleClearCache}>
+              Clear All Cache
+            </button>
+          </div>
           {status && <div className="status-message">{status}</div>}
         </footer>
       </div>
@@ -222,6 +275,7 @@ export const OptionsApp: React.FC = () => {
       <style>{`
         :root {
           --primary-color: #3498db;
+          --danger-color: #e74c3c;
           --bg-color: #f5f7fa;
           --card-bg: #ffffff;
           --header-bg: #fcfcfd;
@@ -340,6 +394,12 @@ export const OptionsApp: React.FC = () => {
           display: flex;
           align-items: center;
           justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .footer-actions {
+          display: flex;
+          gap: 12px;
         }
         .save-btn {
           background-color: var(--primary-color);
@@ -355,7 +415,22 @@ export const OptionsApp: React.FC = () => {
         .save-btn:hover {
           background-color: #2980b9;
         }
-        .save-btn:active {
+        .clear-btn {
+          background-color: transparent;
+          color: var(--danger-color);
+          border: 1px solid var(--danger-color);
+          padding: 11px 20px;
+          border-radius: 6px;
+          font-weight: 600;
+          font-size: 14px;
+          cursor: pointer;
+          transition: background-color 0.2s, color 0.2s;
+        }
+        .clear-btn:hover {
+          background-color: var(--danger-color);
+          color: white;
+        }
+        .save-btn:active, .clear-btn:active {
           transform: translateY(1px);
         }
         .status-message {
@@ -371,6 +446,49 @@ export const OptionsApp: React.FC = () => {
           font-size: 13px;
           font-weight: 600;
           margin-bottom: 5px;
+        }
+
+        .hotkey-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 15px;
+          margin-top: 10px;
+        }
+        .hotkey-item {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+        }
+        .hotkey-label {
+          font-size: 12px;
+          color: var(--text-secondary);
+          text-transform: capitalize;
+        }
+        .hotkey-record-btn {
+          padding: 8px;
+          background: var(--input-bg);
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          font-family: monospace;
+          font-size: 13px;
+          cursor: pointer;
+          color: var(--text-color);
+          transition: all 0.2s;
+          text-align: center;
+        }
+        .hotkey-record-btn:hover {
+          border-color: var(--primary-color);
+        }
+        .hotkey-record-btn.recording {
+          background: var(--primary-color);
+          color: white;
+          border-color: var(--primary-color);
+          animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.7; }
+          100% { opacity: 1; }
         }
       `}</style>
     </div>

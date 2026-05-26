@@ -47,4 +47,20 @@ export class CacheManager {
     const data = await chrome.storage.local.get(this.HISTORY_KEY);
     return (data[this.HISTORY_KEY] as HistoryItem[]) || [];
   }
+
+  public static async clearAllCache() {
+    const all = await chrome.storage.local.get(null);
+    const keysToRemove = Object.keys(all).filter(key => 
+      key === this.CACHE_KEY || 
+      key === this.HISTORY_KEY || 
+      key.startsWith('audio_')
+    );
+    await chrome.storage.local.remove(keysToRemove);
+  }
+
+  public static async clearAudioCache() {
+    const all = await chrome.storage.local.get(null);
+    const keysToRemove = Object.keys(all).filter(key => key.startsWith('audio_'));
+    await chrome.storage.local.remove(keysToRemove);
+  }
 }

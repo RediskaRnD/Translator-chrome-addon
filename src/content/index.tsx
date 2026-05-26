@@ -113,7 +113,13 @@ async function showPopup(text: string, rect: DOMRect) {
 
   setTimeout(() => {
     document.addEventListener('mousedown', handleOutsideClick, { capture: true });
+    window.addEventListener('blur', handleBlur);
   }, 100);
+}
+
+function handleBlur() {
+  if (container && (container as any).isPinned) return;
+  hidePopup();
 }
 
 function hidePopup() {
@@ -125,6 +131,7 @@ function hidePopup() {
     shadowRoot.innerHTML = '';
   }
   document.removeEventListener('mousedown', handleOutsideClick, { capture: true });
+  window.removeEventListener('blur', handleBlur);
 }
 
 const handleOutsideClick = (event: MouseEvent) => {

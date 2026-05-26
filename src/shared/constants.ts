@@ -8,6 +8,15 @@ export const DEFAULT_SETTINGS = {
   AUTO_PLAYBACK_LIMIT: 100,
 };
 
+export const DEFAULT_HOTKEYS = {
+  PIN: 'KeyP',
+  SETTINGS: 'KeyS',
+  HISTORY_BACK: 'ArrowLeft',
+  HISTORY_FORWARD: 'ArrowRight',
+  TOGGLE_AUTOPLAY: 'KeyA',
+  REPLAY: 'KeyR',
+};
+
 export const UI_CONSTANTS = {
   MIN_POPUP_HEIGHT: 150,
   MAX_POPUP_HEIGHT: 555,

@@ -5,7 +5,7 @@ import { LANGUAGES, getLanguageName } from "../shared/languages";
 import { getAccentsForLanguage } from "../shared/accents";
 import { CacheManager } from "../shared/CacheManager";
 import { HistoryItem } from "../shared/types";
-import { DEFAULT_SETTINGS, UI_CONSTANTS } from '../shared/constants';
+import { DEFAULT_SETTINGS, UI_CONSTANTS, DEFAULT_HOTKEYS } from '../shared/constants';
 
 interface PopupAppProps {
   x?: number;
@@ -38,14 +38,10 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
   const isNavigatingHistory = React.useRef(false);
 
-  /**
-   * Helper to check if the extension context is still valid before calling Chrome APIs.
-   */
-  const isContextValid = () => {
-    return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
-  };
+  const isContextValid = () => typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
 
   const speak = (text: string, langCode: string) => {
     if (!isContextValid()) return;
@@ -58,13 +54,79 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     setHistoryLength(history.length);
   }, []);
 
+  const replayAudio = () => {
+    if (originalText && (autoPlayback === 'from' || autoPlayback === 'off')) {
+      speak(originalText, from === 'auto' ? 'en' : from);
+    } else if (translatedText && autoPlayback === 'to') {
+      speak(translatedText, to);
+    } else if (originalText) {
+      speak(originalText, from === 'auto' ? 'en' : from);
+    }
+  };
+
+  const openOptions = () => {
+    if (!isContextValid()) return;
+    chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+  };
+
+  const toggleAutoPlayback = () => {
+    const modes: ('off' | 'from' | 'to')[] = ['off', 'from', 'to'];
+    const nextMode = modes[(modes.indexOf(autoPlayback) + 1) % modes.length];
+    setAutoPlayback(nextMode);
+
+    if (isContextValid()) {
+      chrome.storage.local.set({ autoPlayback: nextMode });
+      chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
+    }
+
+    if (nextMode === 'from' && originalText) {
+      speak(originalText, from === 'auto' ? 'en' : from);
+    } else if (nextMode === 'to' && translatedText) {
+      speak(translatedText, to);
+    }
+  };
+
+  const navigateHistory = async (direction: number) => {
+    if (!isContextValid()) return;
+    const history = await CacheManager.getHistory();
+    const newIndex = historyIndex + direction;
+    if (newIndex >= 0 && newIndex < history.length) {
+      isNavigatingHistory.current = true;
+      const item: HistoryItem = history[newIndex];
+      setHistoryIndex(newIndex);
+      setOriginalText(item.text);
+      setFrom(item.from);
+      setTo(item.to);
+
+      let data = item.translation;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch (e) { data = { translatedText: data, dictionary: [] }; }
+      }
+
+      setTranslatedText(data.translatedText || "");
+      setDictionary(data.dictionary || (data.alternatives ? [{ pos: 'alternatives', terms: data.alternatives }] : []));
+
+      chrome.storage.local.get(["autoPlayback", "autoPlaybackLimit"], (settings) => {
+        const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
+        const autoLimit = (settings.autoPlaybackLimit as number) !== undefined ? (settings.autoPlaybackLimit as number) : DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
+
+        if (autoPlayMode !== 'off') {
+          const textToSpeak = autoPlayMode === 'from' ? item.text : (data.translatedText || "");
+          const langToSpeak = autoPlayMode === 'from' ? item.from : item.to;
+          if (textToSpeak && textToSpeak.length <= autoLimit) {
+            speak(textToSpeak, langToSpeak);
+          }
+        }
+      });
+
+      setTimeout(() => { isNavigatingHistory.current = false; }, 100);
+    }
+  };
+
   const requestTranslation = useCallback((text: string, src: string, target: string) => {
     if (!text || !isContextValid()) return;
     chrome.runtime.sendMessage(
-      {
-        type: "TRANSLATE",
-        payload: { text, from: src, to: target },
-      },
+      { type: "TRANSLATE", payload: { text, from: src, to: target } },
       (res) => {
         if (res && isContextValid()) {
           const detected = res.detectedLanguage || "en";
@@ -86,11 +148,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
             setHistoryIndex(0);
             updateHistoryLength();
 
-            // Handle auto-playback
             if (autoPlayMode !== 'off') {
               const textToSpeak = autoPlayMode === 'from' ? text : res.translatedText;
               const langToSpeak = autoPlayMode === 'from' ? (detected || (src === 'auto' ? 'en' : src)) : target;
-
               if (textToSpeak.length <= autoLimit) {
                 speak(textToSpeak, langToSpeak);
               }
@@ -101,61 +161,58 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     );
   }, [updateHistoryLength]);
 
-  // Load settings and page-specific languages ONCE on mount
+  // Listen for hotkeys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.code === hotkeys.PIN) { e.preventDefault(); setIsPinned(prev => !prev); }
+      else if (e.code === hotkeys.SETTINGS) { e.preventDefault(); openOptions(); }
+      else if (e.code === hotkeys.HISTORY_BACK) { if (historyIndex < historyLength - 1) { e.preventDefault(); navigateHistory(1); } }
+      else if (e.code === hotkeys.HISTORY_FORWARD) { if (historyIndex > 0) { e.preventDefault(); navigateHistory(-1); } }
+      else if (e.code === hotkeys.TOGGLE_AUTOPLAY) { e.preventDefault(); toggleAutoPlayback(); }
+      else if (e.code === hotkeys.REPLAY) { e.preventDefault(); replayAudio(); }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hotkeys, historyIndex, historyLength, autoPlayback, originalText, translatedText, from, to]);
+
   useEffect(() => {
     if (!isContextValid()) return;
     const hostname = window.location.hostname;
-    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang'], (settings) => {
+    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'hotkeys'], (settings) => {
       if (!isContextValid()) return;
       if (settings.uiScale) setScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
+      if (settings.hotkeys) setHotkeys(settings.hotkeys as Record<string, string>);
 
       const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
-      if (pageLangs) {
-        setFrom(pageLangs.from);
-        setTo(pageLangs.to);
-      } else if (settings.nativeLang) {
-        setTo(settings.nativeLang as string);
-      }
+      if (pageLangs) { setFrom(pageLangs.from); setTo(pageLangs.to); }
+      else if (settings.nativeLang) { setTo(settings.nativeLang as string); }
       setIsInitialized(true);
       updateHistoryLength();
     });
   }, []);
 
-  // Save page-specific languages when they change
   useEffect(() => {
     if (!isInitialized || !isContextValid()) return;
     const hostname = window.location.hostname;
     chrome.storage.local.set({ [`lang_${hostname}`]: { from, to } });
   }, [from, to, isInitialized]);
 
-  // Listen to system theme changes
   useEffect(() => {
-    if (theme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleChange = (e: MediaQueryListEvent) => setSystemIsDark(e.matches);
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
-    }
-    return undefined;
+    if (theme !== 'system') return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => setSystemIsDark(e.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  // Update position if new coordinates are provided (not pinned)
-  useEffect(() => {
-    if (propX !== undefined && propY !== undefined) {
-      setPos({ x: propX, y: propY });
-    }
-  }, [propX, propY]);
+  useEffect(() => { if (propX !== undefined && propY !== undefined) setPos({ x: propX, y: propY }); }, [propX, propY]);
 
-  // Sync initialText when it changes from the outside (new selection)
-  useEffect(() => {
-    if (initialText) {
-      setOriginalText(initialText);
-    }
-  }, [initialText]);
+  useEffect(() => { if (initialText) setOriginalText(initialText); }, [initialText]);
 
-  // Main translation logic: triggers when word or languages change
   useEffect(() => {
     if (isInitialized && originalText) {
       if (isNavigatingHistory.current) return;
@@ -163,7 +220,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   }, [originalText, from, to, isInitialized]);
 
-  // Drag & Resize logic
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.classList.contains('resize-handle-bottom')) return;
@@ -171,19 +227,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     setDragStart({ x: e.clientX - pos.x, y: e.clientY - pos.y });
   };
 
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  };
+  const handleResizeStart = (e: React.MouseEvent) => { e.preventDefault(); setIsResizing(true); };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setPos({
-          x: e.clientX - dragStart.x,
-          y: e.clientY - dragStart.y
-        });
-      }
+      if (isDragging) setPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
       if (isResizing) {
         const popupElement = document.querySelector('.translator-popup-container')?.shadowRoot?.querySelector('.popup') as HTMLElement;
         if (popupElement) {
@@ -193,156 +241,42 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         }
       }
     };
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      setIsResizing(false);
-    };
-
-    if (isDragging || isResizing) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
+    const handleMouseUp = () => { setIsDragging(false); setIsResizing(false); };
+    if (isDragging || isResizing) { window.addEventListener('mousemove', handleMouseMove); window.addEventListener('mouseup', handleMouseUp); }
+    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
   }, [isDragging, isResizing, dragStart, scale]);
 
-  // Communicating with index.tsx via a custom property on the container
   useEffect(() => {
     const container = document.querySelector('.translator-popup-container');
-    if (container) {
-      (container as any).isPinned = isPinned;
-    }
+    if (container) (container as any).isPinned = isPinned;
   }, [isPinned]);
 
-  const navigateHistory = async (direction: number) => {
-    if (!isContextValid()) return;
-    const history = await CacheManager.getHistory();
-    const newIndex = historyIndex + direction;
-    if (newIndex >= 0 && newIndex < history.length) {
-      isNavigatingHistory.current = true;
-      const item: HistoryItem = history[newIndex];
-      setHistoryIndex(newIndex);
-      setOriginalText(item.text);
-      setFrom(item.from);
-      setTo(item.to);
+  useEffect(() => { return () => { if (isContextValid()) chrome.runtime.sendMessage({ type: "STOP_AUDIO" }); }; }, []);
 
-      let data = item.translation;
-      if (typeof data === 'string') {
-        try {
-          data = JSON.parse(data);
-        } catch (e) {
-          data = { translatedText: data, dictionary: [] };
-        }
-      }
-
-      setTranslatedText(data.translatedText || "");
-
-      if (data.dictionary) {
-        setDictionary(data.dictionary);
-      } else if (data.alternatives) {
-        setDictionary([{ pos: 'alternatives', terms: data.alternatives }]);
-      } else {
-        setDictionary([]);
-      }
-
-      // Trigger audio on history navigation if enabled
-      chrome.storage.local.get(["autoPlayback", "autoPlaybackLimit"], (settings) => {
-        const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
-        const autoLimit = (settings.autoPlaybackLimit as number) !== undefined ? (settings.autoPlaybackLimit as number) : DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
-
-        if (autoPlayMode !== 'off') {
-          const textToSpeak = autoPlayMode === 'from' ? item.text : (data.translatedText || "");
-          const langToSpeak = autoPlayMode === 'from' ? item.from : item.to;
-
-          if (textToSpeak && textToSpeak.length <= autoLimit) {
-            speak(textToSpeak, langToSpeak);
-          }
-        }
-      });
-
-      setTimeout(() => {
-        isNavigatingHistory.current = false;
-      }, 100);
-    }
-  };
   const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
   const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
 
   const handleWordClick = (word: string) => {
     const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
     if (!cleanWord) return;
-
-    const newFrom = to;
-    const newTo = from === 'auto' ? 'en' : from;
-    setFrom(newFrom);
-    setTo(newTo);
+    setFrom(to);
+    setTo(from === 'auto' ? 'en' : from);
     setOriginalText(cleanWord);
   };
 
   const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
     const accents = getAccentsForLanguage(lang);
-    const list: { code: string, label: React.ReactNode }[] = accents.length > 0 ? accents : [{ code: lang, label: <IoVolumeMediumOutline /> }];
-
+    const list = accents.length > 0 ? accents : [{ code: lang, label: <IoVolumeMediumOutline /> }];
     return (
       <div className="line" key={key || text}>
         <div className="word-text">
-          {isTranslation ? (
-            text.split(/(\s+)/).map((part, i) => (
-              part.trim() ? (
-                <span
-                  key={i}
-                  className="clickable-word"
-                  onClick={() => handleWordClick(part)}
-                >
-                  {part}
-                </span>
-              ) : part
-            ))
-          ) : text}
+          {isTranslation ? text.split(/(\s+)/).map((part, i) => part.trim() ? <span key={i} className="clickable-word" onClick={() => handleWordClick(part)}>{part}</span> : part) : text}
         </div>
         <div className="accent-buttons">
-          {list.map((a) => (
-            <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code)}>
-              {a.label}
-            </button>
-          ))}
+          {list.map((a) => <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code)}>{a.label}</button>)}
         </div>
       </div>
     );
-  };
-
-  const openOptions = () => {
-    if (!isContextValid()) return;
-    chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
-  };
-
-  // Stop audio on unmount
-  useEffect(() => {
-    return () => {
-      if (isContextValid()) {
-        chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
-      }
-    };
-  }, []);
-
-  const toggleAutoPlayback = () => {
-    const modes: ('off' | 'from' | 'to')[] = ['off', 'from', 'to'];
-    const nextMode = modes[(modes.indexOf(autoPlayback) + 1) % modes.length];
-    setAutoPlayback(nextMode);
-
-    if (isContextValid()) {
-      chrome.storage.local.set({ autoPlayback: nextMode });
-      chrome.runtime.sendMessage({ type: "STOP_AUDIO" });
-    }
-
-    // Play sample
-    if (nextMode === 'from' && originalText) {
-      speak(originalText, from === 'auto' ? 'en' : from);
-    } else if (nextMode === 'to' && translatedText) {
-      speak(translatedText, to);
-    }
   };
 
   const getAutoPlaybackIcon = () => {
@@ -353,27 +287,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   };
 
-  const getAutoPlaybackTitle = () => {
-    switch (autoPlayback) {
-      case 'from': return 'Auto-play: Source';
-      case 'to': return 'Auto-play: Translation';
-      default: return 'Auto-play: Off';
-    }
-  };
-
   const popupStyle: React.CSSProperties = {
-    left: pos.x,
-    top: pos.y,
+    left: pos.x, top: pos.y,
     height: manualHeight !== null ? `${manualHeight}px` : 'auto',
-    maxHeight: manualHeight !== null ? 'none' : '555px',
+    maxHeight: manualHeight !== null ? 'none' : `${UI_CONSTANTS.MAX_POPUP_HEIGHT}px`,
     zoom: scale
   };
 
-  const getShortCode = (code: string) => {
-    if (code === 'auto') return 'AUTO';
-    return code.split('-')[0].toUpperCase();
-  };
-
+  const getShortCode = (code: string) => code === 'auto' ? 'AUTO' : code.split('-')[0].toUpperCase();
   const currentAppliedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
 
   return (
@@ -395,191 +316,74 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           </div>
         </div>
         <div className="header-controls">
-          <button className="nav-btn auto-playback-btn" onClick={toggleAutoPlayback} title={getAutoPlaybackTitle()}>
-            {getAutoPlaybackIcon()}
-          </button>
-          <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)} title="History Back">
-            <IoCaretBack />
-          </button>
-          <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)} title="History Forward">
-            <IoCaretForwardOutline />
-          </button>
-          <button className="nav-btn" onClick={openOptions} title="Settings">
-            <IoSettingsOutline />
-          </button>
-          <button
-            className={`nav-btn ${isPinned ? 'pinned' : ''}`}
-            onClick={() => setIsPinned(!isPinned)}
-            title={isPinned ? 'Unpin' : 'Pin'}
-            style={{ color: isPinned ? '#3498db' : '#7f8c8d' }}
-          >
+          <button className="nav-btn" onClick={toggleAutoPlayback} title="Toggle Auto-play">{getAutoPlaybackIcon()}</button>
+          <button className="nav-btn" disabled={historyIndex >= historyLength - 1} onClick={() => navigateHistory(1)} title="History Back"><IoCaretBack /></button>
+          <button className="nav-btn" disabled={historyIndex <= 0} onClick={() => navigateHistory(-1)} title="History Forward"><IoCaretForwardOutline /></button>
+          <button className="nav-btn" onClick={openOptions} title="Settings"><IoSettingsOutline /></button>
+          <button className={`nav-btn ${isPinned ? 'pinned' : ''}`} onClick={() => setIsPinned(!isPinned)} title={isPinned ? 'Unpin' : 'Pin'} style={{ color: isPinned ? '#3498db' : '#7f8c8d' }}>
             {isPinned ? <BsPin /> : <BsPinAngle />}
           </button>
         </div>
       </div>
-
       <div className="content-scrollable">
-        <div className="section">
-          {renderLine(originalText, from === "auto" ? "en" : from)}
-        </div>
-
+        <div className="section">{renderLine(originalText, from === "auto" ? "en" : from)}</div>
         <div className="section" style={{ borderTop: '1px solid #eee' }}>
           {renderLine(translatedText, to, 'main-translation', true)}
-
           {dictionary.map((group, idx) => (
             <div key={idx} style={{ marginTop: '12px' }}>
-              <div className="pos-header">
-                <span>{group.pos}</span>
-                <div className="pos-line"></div>
-              </div>
+              <div className="pos-header"><span>{group.pos}</span><div className="pos-line"></div></div>
               {group.terms.map((term, tIdx) => renderLine(term, to, `${idx}-${tIdx}`, true))}
             </div>
           ))}
         </div>
       </div>
-
       <div className="footer">
         <a href={forvoHref} className="forvo-link" target="_blank" rel="noreferrer">Forvo: "{wordForForvo}"</a>
         <span style={{ fontSize: '9px', color: '#bdc3c7' }}>v{version}</span>
       </div>
-
-      <div
-        className="resize-handle-bottom"
-        onMouseDown={handleResizeStart}
-      ></div>
-
+      <div className="resize-handle-bottom" onMouseDown={handleResizeStart}></div>
       <style>{`
         .popup {
-          --popup-bg: #ffffff;
-          --header-bg: #f1f3f5;
-          --footer-bg: #f8f9fa;
-          --text-color: #2c3e50;
-          --text-secondary: #7f8c8d;
-          --border-color: #d0d0d0;
-          --header-border: #e0e0e0;
-          --btn-bg: #ffffff;
-          --btn-border: #cccccc;
-          --btn-hover-bg: #e0e0e0;
-          --pos-text: #b2bec3;
-          --pos-line: #f1f2f6;
-          --accent-btn-border: #dddddd;
-          --primary-color: #3498db;
-
-          position: fixed;
-          background: var(--popup-bg);
-          border-radius: 8px;
-          box-shadow: 0 4px 30px rgba(0,0,0,0.3);
+          --popup-bg: #ffffff; --header-bg: #f1f3f5; --footer-bg: #f8f9fa; --text-color: #2c3e50; --text-secondary: #7f8c8d;
+          --border-color: #d0d0d0; --header-border: #e0e0e0; --btn-bg: #ffffff; --btn-border: #cccccc; --btn-hover-bg: #e0e0e0;
+          --pos-text: #b2bec3; --pos-line: #f1f2f6; --accent-btn-border: #dddddd; --primary-color: #3498db;
+          position: fixed; background: var(--popup-bg); border-radius: 8px; box-shadow: 0 4px 30px rgba(0,0,0,0.3);
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          font-size: 14px;
-          color: var(--text-color);
-          z-index: 2147483647;
-          overflow: hidden;
-          border: 1px solid var(--border-color);
-          display: flex;
-          flex-direction: column;
-          resize: horizontal;
-          min-width: 250px;
-          min-height: 150px;
-          width: 350px;
-          pointer-events: auto;
+          font-size: 14px; color: var(--text-color); z-index: 2147483647; overflow: hidden; border: 1px solid var(--border-color);
+          display: flex; flex-direction: column; resize: horizontal; min-width: 250px; min-height: 150px; width: 350px; pointer-events: auto;
           transition: background 0.3s, color 0.3s, border-color 0.3s;
         }
-
         .popup[data-theme='dark'] {
-          --popup-bg: #2c2c2c;
-          --header-bg: #1e1e1e;
-          --footer-bg: #1e1e1e;
-          --text-color: #e0e0e0;
-          --text-secondary: #a0a0a0;
-          --border-color: #444444;
-          --header-border: #333333;
-          --btn-bg: #3d3d3d;
-          --btn-border: #555555;
-          --btn-hover-bg: #4d4d4d;
-          --pos-text: #888888;
-          --pos-line: #3d3d3d;
-          --accent-btn-border: #555555;
-          --primary-color: #3498db;
+          --popup-bg: #2c2c2c; --header-bg: #1e1e1e; --footer-bg: #1e1e1e; --text-color: #e0e0e0; --text-secondary: #a0a0a0;
+          --border-color: #444444; --header-border: #333333; --btn-bg: #3d3d3d; --btn-border: #555555; --btn-hover-bg: #4d4d4d;
+          --pos-text: #888888; --pos-line: #3d3d3d; --accent-btn-border: #555555; --primary-color: #3498db;
         }
-
-        .header {
-          background: var(--header-bg);
-          padding: 2px 10px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-bottom: 1px solid var(--header-border);
-          flex-shrink: 0;
-          user-select: none;
-        }
+        .header { background: var(--header-bg); padding: 4px 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--header-border); flex-shrink: 0; user-select: none; }
         .lang-selects { display: flex; align-items: center; gap: 4px; user-select: none; }
         .select-wrapper { position: relative; display: flex; align-items: center; padding: 2px 4px; border-radius: 3px; transition: background 0.2s; }
         .select-wrapper:hover { background: var(--btn-hover-bg); }
         .lang-code-display { font-size: 11px; font-weight: bold; color: var(--text-color); cursor: pointer; }
-        .select-wrapper select {
-          position: absolute;
-          top: 0; left: 0; width: 100%; height: 100%;
-          opacity: 0;
-          cursor: pointer;
-        }
+        .select-wrapper select { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
         .header-controls { display: flex; align-items: center; gap: 4px; }
-        .nav-btn {
-          background: transparent; border: 1px solid transparent; border-radius: 4px;
-          cursor: pointer; font-size: 22px; color: var(--text-secondary);
-          user-select: none;
-          display: flex; align-items: center; justify-content: center;
-          transition: background 0.2s, color 0.2s;
-        }
+        .nav-btn { background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 22px; color: var(--text-secondary); user-select: none; display: flex; align-items: center; justify-content: center; transition: background 0.2s, color 0.2s; }
         .nav-btn:hover { background: var(--btn-hover-bg); color: var(--primary-color); }
         .nav-btn:disabled { opacity: 0.3; cursor: default; }
         .nav-btn.pinned { color: var(--primary-color); }
-        .auto-playback-btn { font-size: 22px;}
-        .auto-playback-btn small { font-size: 10px; font-weight: bold; margin-bottom: -4px; }
-        .content-scrollable {
-          flex: 1;
-          overflow-y: auto;
-        }
+        .content-scrollable { flex: 1; overflow-y: auto; }
         .section { padding: 10px 12px; }
         .line { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 2px; }
-        .line:last-child { margin-bottom: 0; }
         .word-text { line-height: 1.4; word-break: break-word; flex: 1; }
         .clickable-word { cursor: pointer; border-bottom: 1px dashed transparent; transition: border-color 0.2s; }
         .clickable-word:hover { border-bottom-color: var(--primary-color); color: var(--primary-color); }
-        .pos-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 10px;
-          color: var(--pos-text);
-          text-transform: uppercase;
-          font-weight: 600;
-          margin-bottom: 6px;
-          letter-spacing: 0.5px;
-          user-select: none;
-        }
+        .pos-header { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--pos-text); text-transform: uppercase; font-weight: 600; margin-bottom: 6px; letter-spacing: 0.5px; user-select: none; }
         .pos-line { flex: 1; height: 1px; background: var(--pos-line); }
         .accent-buttons { display: flex; gap: 3px; user-select: none; }
-        .accent-btn {
-          width: 28px; height: 18px; display: flex; align-items: center; justify-content: center;
-          background: var(--btn-bg); border: 1px solid var(--accent-btn-border); border-radius: 3px;
-          font-size: 9px; font-weight: bold; cursor: pointer; color: var(--text-secondary);
-          user-select: none;
-        }
+        .accent-btn { width: 28px; height: 18px; display: flex; align-items: center; justify-content: center; background: var(--btn-bg); border: 1px solid var(--accent-btn-border); border-radius: 3px; font-size: 9px; font-weight: bold; cursor: pointer; color: var(--text-secondary); user-select: none; }
         .accent-btn:hover { background: var(--primary-color); color: white; }
         .footer { padding: 4px 12px; background: var(--footer-bg); border-top: 1px solid var(--header-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
         .forvo-link { color: var(--primary-color); text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
-        .resize-handle-bottom {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 6px;
-          cursor: ns-resize;
-          background: transparent;
-        }
-        .resize-handle-bottom:hover {
-          background: rgba(52, 152, 219, 0.1);
-        }
+        .resize-handle-bottom { position: absolute; bottom: 0; left: 0; right: 0; height: 6px; cursor: ns-resize; background: transparent; }
+        .resize-handle-bottom:hover { background: rgba(52, 152, 219, 0.1); }
       `}</style>
     </div>
   );
