@@ -19,6 +19,8 @@ const version = isContextValid() ? chrome.runtime.getManifest().version : 'unkno
 
 function initContainer() {
   if (!isContextValid()) return;
+  // Only the top-level window should manage the container
+  if (window !== window.top) return;
 
   if (!container) {
     container = document.createElement('div');
@@ -39,28 +41,39 @@ function initContainer() {
   if (target && container.parentElement !== target) {
     target.appendChild(container);
   } else if (target) {
-    // Move to end of body to ensure highest z-order among elements with same z-index
     target.appendChild(container);
   }
 }
 
-async function showPopup(text: string, rect: DOMRect) {
-  if (!isContextValid()) {
-    console.warn('Quick Translator: Extension context invalidated. Please refresh the page.');
+async function showPopup(text: string, rect: any) {
+  if (!isContextValid()) return;
+
+  // If we are in an iframe, send the request to the top frame
+  if (window !== window.top) {
+    window.parent.postMessage({
+      type: 'QT_SELECTION',
+      text,
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      }
+    }, '*');
     return;
   }
 
   initContainer();
   if (!shadowRoot) return;
 
-  const isPinned = (container as any).isPinned;
+  const isPinned = container ? (container as any).isPinned : false;
 
-  // Get current scale and theme to calculate boundaries and prevent flash
   const settings = await chrome.storage.local.get(['uiScale', 'theme']);
   const scale = (settings.uiScale as number) || 1.0;
   const theme = (settings.theme as 'light' | 'dark' | 'system') || 'system';
 
-  // Calculate smart position relative to viewport
   let x = 0;
   let y = 0;
 
@@ -72,24 +85,12 @@ async function showPopup(text: string, rect: DOMRect) {
     x = rect.left;
     y = rect.bottom + margin;
 
-    // Check right boundary
-    if (x + popupWidth > window.innerWidth) {
-      x = window.innerWidth - popupWidth - margin;
-    }
-    // Check left boundary
-    if (x < 0) {
-      x = margin;
-    }
-
-    // Check bottom boundary
+    if (x + popupWidth > window.innerWidth) x = window.innerWidth - popupWidth - margin;
+    if (x < 0) x = margin;
     if (y + popupHeight > window.innerHeight) {
       const spaceAbove = rect.top - popupHeight - margin;
-      if (spaceAbove > 0) {
-        y = spaceAbove;
-      }
+      if (spaceAbove > 0) y = spaceAbove;
     }
-    
-    // Safety check for top
     if (y < 0) y = margin;
   }
 
@@ -117,12 +118,59 @@ async function showPopup(text: string, rect: DOMRect) {
   }, 100);
 }
 
+// Global listener for cross-frame communication
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'QT_SELECTION') {
+    const { text, rect } = event.data;
+    
+    // Find the iframe that sent the message
+    const iframes = document.querySelectorAll('iframe');
+    const senderIframe = Array.from(iframes).find(f => f.contentWindow === event.source);
+    
+    if (senderIframe) {
+      const offset = senderIframe.getBoundingClientRect();
+      const absoluteRect = {
+        left: rect.left + offset.left,
+        top: rect.top + offset.top,
+        right: rect.right + offset.left,
+        bottom: rect.bottom + offset.top,
+        width: rect.width,
+        height: rect.height
+      };
+
+      if (window === window.top) {
+        showPopup(text, absoluteRect);
+      } else {
+        // Continue bubbling up
+        window.parent.postMessage({
+          type: 'QT_SELECTION',
+          text,
+          rect: absoluteRect
+        }, '*');
+      }
+    }
+  }
+
+  if (event.data && event.data.type === 'QT_HIDE') {
+    if (window === window.top) {
+      hidePopup();
+    } else {
+      window.parent.postMessage({ type: 'QT_HIDE' }, '*');
+    }
+  }
+});
+
 function handleBlur() {
   if (container && (container as any).isPinned) return;
   hidePopup();
 }
 
 function hidePopup() {
+  if (window !== window.top) {
+    window.parent.postMessage({ type: 'QT_HIDE' }, '*');
+    return;
+  }
+
   if (reactRoot) {
     reactRoot.unmount();
     reactRoot = null;
@@ -135,6 +183,8 @@ function hidePopup() {
 }
 
 const handleOutsideClick = (event: MouseEvent) => {
+  if (window !== window.top) return; // Only top frame handles outside clicks for its popup
+
   if (container && (container as any).isPinned) return;
   const path = event.composedPath();
   if (container && !path.includes(container)) {
@@ -182,6 +232,23 @@ function getSelectionData() {
 
   return null;
 }
+
+document.addEventListener('mousedown', (event) => {
+  if (!isContextValid()) return;
+
+  const path = event.composedPath();
+  const isInsidePopup = path.some(el => 
+    el instanceof HTMLElement && el.classList.contains('translator-popup-container')
+  );
+  
+  if (isInsidePopup) return;
+
+  if (window !== window.top) {
+    window.parent.postMessage({ type: 'QT_HIDE' }, '*');
+  } else {
+    // Top frame handles its own outside clicks via handleOutsideClick
+  }
+}, { capture: true });
 
 document.addEventListener('mouseup', (event) => {
   if (!isContextValid()) return;
