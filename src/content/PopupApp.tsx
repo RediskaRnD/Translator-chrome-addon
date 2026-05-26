@@ -253,11 +253,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   useEffect(() => { return () => { if (isContextValid()) chrome.runtime.sendMessage({ type: "STOP_AUDIO" }); }; }, []);
 
-  const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
+  const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
   const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
 
   const handleWordClick = (word: string) => {
-    const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=\-_`~()]/g, "");
+    const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
     if (!cleanWord) return;
     setFrom(to);
     setTo(from === 'auto' ? 'en' : from);
