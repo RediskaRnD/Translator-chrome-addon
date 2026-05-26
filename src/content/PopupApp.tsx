@@ -16,6 +16,24 @@ interface PopupAppProps {
   theme?: 'light' | 'dark' | 'system';
 }
 
+function getScript(text: string): 'cyrillic' | 'latin' | null {
+  const hasCyrillic = /[а-яА-ЯёЁ]/.test(text);
+  const hasLatin = /[a-zA-Z]/.test(text);
+  
+  if (hasCyrillic && !hasLatin) return 'cyrillic';
+  if (hasLatin && !hasCyrillic) return 'latin';
+  return null;
+}
+
+function isLanguageInScript(lang: string, script: 'cyrillic' | 'latin'): boolean {
+  const cyrillicLangs = ['ru', 'be', 'uk', 'bg', 'mk', 'sr', 'kk', 'ky', 'tg'];
+  const isCyrillicLang = cyrillicLangs.includes(lang.split('-')[0]);
+  
+  if (script === 'cyrillic') return isCyrillicLang;
+  // Most other common languages in this extension's context use Latin
+  return !isCyrillicLang;
+}
+
 export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version, theme: initialTheme }) => {
   const popupRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
@@ -35,17 +53,29 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
   const [from, setFrom] = useState("auto");
   const [to, setTo] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
+  const [detectedFrom, setDetectedFrom] = useState("en");
   const [historyIndex, setHistoryIndex] = useState(0);
   const [historyLength, setHistoryLength] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
   const isNavigatingHistory = React.useRef(false);
 
+  const currentFrom = from === 'auto' ? detectedFrom : from;
+
   const isContextValid = () => typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
 
-  const speak = (text: string, langCode: string) => {
+  const speak = (text: string, langCode: string, saveAsPreference: boolean = false) => {
     if (!isContextValid()) return;
     chrome.runtime.sendMessage({ type: "SPEAK", payload: { text, langCode } });
+    
+    if (saveAsPreference && langCode.includes('-')) {
+      const baseLang = langCode.split('-')[0];
+      chrome.storage.local.get(['preferredAccents'], (result) => {
+        const prefs = (result.preferredAccents || {}) as Record<string, string>;
+        prefs[baseLang] = langCode;
+        chrome.storage.local.set({ preferredAccents: prefs });
+      });
+    }
   };
 
   const updateHistoryLength = useCallback(async () => {
@@ -56,11 +86,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const replayAudio = () => {
     if (originalText && (autoPlayback === 'from' || autoPlayback === 'off')) {
-      speak(originalText, from === 'auto' ? 'en' : from);
+      speak(originalText, currentFrom);
     } else if (translatedText && autoPlayback === 'to') {
       speak(translatedText, to);
     } else if (originalText) {
-      speak(originalText, from === 'auto' ? 'en' : from);
+      speak(originalText, currentFrom);
     }
   };
 
@@ -80,7 +110,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
 
     if (nextMode === 'from' && originalText) {
-      speak(originalText, from === 'auto' ? 'en' : from);
+      speak(originalText, currentFrom);
     } else if (nextMode === 'to' && translatedText) {
       speak(translatedText, to);
     }
@@ -129,7 +159,17 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       { type: "TRANSLATE", payload: { text, from: src, to: target } },
       (res) => {
         if (res && isContextValid()) {
-          const detected = res.detectedLanguage || "en";
+          const textScript = getScript(text);
+          let detected = res.detectedLanguage || (textScript === 'latin' ? "en" : "ru");
+          
+          if (textScript && !isLanguageInScript(detected, textScript) && text.length < 30) {
+            const fallback = textScript === 'latin' ? 'en' : 'ru';
+            console.log(`QT: Script mismatch detected. Text is ${textScript}, but API said ${detected}. Overriding to ${fallback}.`);
+            detected = fallback;
+          }
+
+          console.log('QT Translation Response:', { text, src, target, detected, translatedText: res.translatedText, textScript });
+
           chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback", "autoPlaybackLimit"], (settings) => {
             if (!isContextValid()) return;
             const native = (settings.nativeLang as string) || DEFAULT_SETTINGS.NATIVE_LANG;
@@ -137,10 +177,26 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
             const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
             const autoLimit = (settings.autoPlaybackLimit as number) !== undefined ? (settings.autoPlaybackLimit as number) : DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
 
-            if (src === "auto" && detected === native) {
-              setFrom(detected);
-              setTo(learning);
-              return;
+            let finalFrom = src;
+            let finalTo = target;
+
+            // Logic for swapping or updating languages
+            if (src === 'auto') {
+              setDetectedFrom(detected);
+              finalFrom = detected;
+              // If auto-detected the target, swap it to something else
+              if (detected === target) {
+                finalTo = (detected === native ? learning : native);
+                setTo(finalTo);
+              }
+            } else if (detected === target && src !== target) {
+
+              // User explicitly set En->Ru, but we detected Ru. Swap them.
+              console.log('QT: Detected target language in explicit mode, swapping...', { detected, target, src });
+              finalFrom = target;
+              finalTo = src;
+              setFrom(finalFrom);
+              setTo(finalTo);
             }
 
             setTranslatedText(res.translatedText);
@@ -150,7 +206,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
             if (autoPlayMode !== 'off') {
               const textToSpeak = autoPlayMode === 'from' ? text : res.translatedText;
-              const langToSpeak = autoPlayMode === 'from' ? (detected || (src === 'auto' ? 'en' : src)) : target;
+              const langToSpeak = autoPlayMode === 'from' ? finalFrom : finalTo;
+              console.log('QT: Triggering audio', { textToSpeak, langToSpeak, autoPlayMode });
               if (textToSpeak.length <= autoLimit) {
                 speak(textToSpeak, langToSpeak);
               }
@@ -175,7 +232,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hotkeys, historyIndex, historyLength, autoPlayback, originalText, translatedText, from, to]);
+  }, [hotkeys, historyIndex, historyLength, autoPlayback, originalText, translatedText, from, to, detectedFrom]);
 
   useEffect(() => {
     if (!isContextValid()) return;
@@ -254,13 +311,20 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   useEffect(() => { return () => { if (isContextValid()) chrome.runtime.sendMessage({ type: "STOP_AUDIO" }); }; }, []);
 
   const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
-  const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${from === "auto" ? "en" : from}`;
+  const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${currentFrom}`;
 
   const handleWordClick = (word: string) => {
     const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
     if (!cleanWord) return;
-    setFrom(to);
-    setTo(from === 'auto' ? 'en' : from);
+    
+    if (from !== 'auto') {
+      const oldFrom = from;
+      setFrom(to);
+      setTo(oldFrom);
+    } else {
+      // If we are in Auto mode, we stay in Auto mode but swap the target
+      setTo(currentFrom === to ? (to === 'ru' ? 'en' : 'ru') : to);
+    }
     setOriginalText(cleanWord);
   };
 
@@ -273,7 +337,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           {isTranslation ? text.split(/(\s+)/).map((part, i) => part.trim() ? <span key={i} className="clickable-word" onClick={() => handleWordClick(part)}>{part}</span> : part) : text}
         </div>
         <div className="accent-buttons">
-          {list.map((a) => <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code)}>{a.label}</button>)}
+          {list.map((a) => <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code, true)}>{a.label}</button>)}
         </div>
       </div>
     );
@@ -281,8 +345,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const getAutoPlaybackIcon = () => {
     switch (autoPlayback) {
-      case 'from': return <><IoVolumeMediumOutline /> <small style={{ marginLeft: '2px' }}>A</small></>;
-      case 'to': return <><IoVolumeMediumOutline /> <small style={{ marginLeft: '2px' }}>B</small></>;
+      case 'from': return <><IoVolumeMediumOutline /> <small style={{ marginLeft: '2px', fontSize: '70%' }}>A</small></>;
+      case 'to': return <><IoVolumeMediumOutline /> <small style={{ marginLeft: '2px', fontSize: '70%' }}>B</small></>;
       default: return <IoVolumeMuteOutline />;
     }
   };
@@ -294,7 +358,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     zoom: scale
   };
 
-  const getShortCode = (code: string) => code === 'auto' ? 'AUTO' : code.split('-')[0].toUpperCase();
+  const getShortCode = (code: string) => {
+    if (code === 'auto') {
+      return `*${detectedFrom.split('-')[0].toUpperCase()}`;
+    }
+    return code.split('-')[0].toUpperCase();
+  };
   const currentAppliedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
 
   return (
@@ -326,7 +395,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         </div>
       </div>
       <div className="content-scrollable">
-        <div className="section">{renderLine(originalText, from === "auto" ? "en" : from)}</div>
+        <div className="section">{renderLine(originalText, currentFrom)}</div>
         <div className="section" style={{ borderTop: '1px solid #eee' }}>
           {renderLine(translatedText, to, 'main-translation', true)}
           {dictionary.map((group, idx) => (

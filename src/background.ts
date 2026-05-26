@@ -123,25 +123,32 @@ async function handleSpeak(text: string, langCode: string) {
     const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
     const preferredAccents = (settings.preferredAccents || {}) as Record<string, string>;
 
-    const preferredVoiceName = preferredVoices[langCode];
-
-    // Determine the best accent code to use
-    let preferredAccent = preferredAccents[langCode];
-    if (!preferredAccent) {
-      const defaultAccents = getAccentsForLanguage(langCode);
-      preferredAccent = defaultAccents.length > 0 ? defaultAccents[0].code : langCode;
+    // Determine the exact accent code to use
+    let accentToUse = langCode;
+    
+    // If langCode is just a base language (e.g., 'en'), use preferences or defaults
+    if (!langCode.includes('-')) {
+      const preferredAccent = preferredAccents[langCode];
+      if (preferredAccent) {
+        accentToUse = preferredAccent;
+      } else {
+        const defaultAccents = getAccentsForLanguage(langCode);
+        accentToUse = defaultAccents.length > 0 ? defaultAccents[0].code : langCode;
+      }
     }
 
+    const preferredVoiceName = preferredVoices[accentToUse] || preferredVoices[langCode.split('-')[0]];
+
     if (preferredVoiceName) {
-      console.log(`Background: Using chrome.tts.speak with voice: ${preferredVoiceName}`);
+      console.log(`Background: Using chrome.tts.speak with voice: ${preferredVoiceName} for accent: ${accentToUse}`);
       chrome.tts.speak(text, {
         voiceName: preferredVoiceName,
-        lang: preferredAccent,
+        lang: accentToUse,
       });
       return;
     }
 
-    const cacheKey = `audio_${preferredAccent}_${text.toLowerCase().trim()}`;
+    const cacheKey = `audio_${accentToUse}_${text.toLowerCase().trim()}`;
     const cached = await chrome.storage.local.get(cacheKey);
     if (mySpeechId !== currentSpeechId) {
       console.log(`Background: handleSpeak cancelled after cache check (My ID: ${mySpeechId}, Current: ${currentSpeechId})`);
@@ -149,14 +156,13 @@ async function handleSpeak(text: string, langCode: string) {
     }
 
     if (cached[cacheKey]) {
-      console.log(`Background: Using cached audio for: "${text}"`);
+      console.log(`Background: Using cached audio for: "${text}" with accent: ${accentToUse}`);
       await playAudio(cached[cacheKey] as string, mySpeechId);
       return;
     }
 
-    console.log(`Background: Fetching audio from Google TTS for: "${text}"`);
-    // Use lowercase for tl parameter to improve compatibility with Google TTS
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${preferredAccent.toLowerCase()}&client=tw-ob&q=${encodeURIComponent(text)}`;
+    console.log(`Background: Fetching audio from Google TTS for: "${text}" with accent: ${accentToUse}`);
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${accentToUse.toLowerCase()}&client=tw-ob&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     if (mySpeechId !== currentSpeechId) {
       console.log(`Background: handleSpeak cancelled after fetch (My ID: ${mySpeechId}, Current: ${currentSpeechId})`);
