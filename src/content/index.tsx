@@ -204,13 +204,26 @@ const handleOutsideClick = (event: MouseEvent) => {
   }
 };
 
+function trimNonAlphanumeric(text: string): string {
+  // Trim standard whitespace
+  let trimmed = text.trim();
+  // Remove non-alphanumeric characters from start and end
+  // We include Unicode characters to support other languages
+  // The regex [^\p{L}\p{N}]+ matches any character that is NOT a letter or a number
+  trimmed = trimmed.replace(/^[^\p{L}\p{N}]+/u, '');
+  trimmed = trimmed.replace(/[^\p{L}\p{N}]+$/u, '');
+  return trimmed;
+}
+
 function getSelectionData(target?: EventTarget | null) {
   console.log('QT: getSelectionData start', { target });
   
   // 1. Standard selection (regular text)
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0) {
-    const text = selection.toString().trim();
+    const rawText = selection.toString();
+    const text = trimNonAlphanumeric(rawText);
+    
     if (text) {
       try {
         const range = selection.getRangeAt(0);
@@ -262,7 +275,9 @@ function getSelectionData(target?: EventTarget | null) {
       });
       
       if (start !== null && end !== null && start !== end) {
-        const text = input.value.substring(start, end).trim();
+        const rawText = input.value.substring(start, end);
+        const text = trimNonAlphanumeric(rawText);
+        
         if (text) {
           const rect = input.getBoundingClientRect();
           console.log('QT: Detected input selection', { text, rect });
