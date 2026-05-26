@@ -50,23 +50,28 @@ async function showPopup(text: string, rect: any) {
 
   // If we are in an iframe, send the request to the top frame
   if (window !== window.top) {
+    console.log('QT Subframe: Sending selection to parent', { text, rect });
     window.parent.postMessage({
       type: 'QT_SELECTION',
       text,
       rect: {
         left: rect.left,
         top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height
+        right: rect.right || (rect.left + (rect.width || 0)),
+        bottom: rect.bottom || (rect.top + (rect.height || 0)),
+        width: rect.width || 0,
+        height: rect.height || 0
       }
     }, '*');
     return;
   }
 
+  console.log('QT Topframe: showPopup called', { text, rect });
   initContainer();
-  if (!shadowRoot) return;
+  if (!shadowRoot) {
+    console.warn('QT Topframe: No shadowRoot found');
+    return;
+  }
 
   const isPinned = container ? (container as any).isPinned : false;
 
@@ -93,6 +98,8 @@ async function showPopup(text: string, rect: any) {
     }
     if (y < 0) y = margin;
   }
+
+  console.log('QT Topframe: Rendering popup at', { x, y, isPinned });
 
   if (!reactRoot) {
     const rootDiv = document.createElement('div');
@@ -122,32 +129,37 @@ async function showPopup(text: string, rect: any) {
 window.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'QT_SELECTION') {
     const { text, rect } = event.data;
+    console.log(`QT Frame [${window === window.top ? 'TOP' : 'SUB'}]: Received QT_SELECTION`, { text, rect });
     
     // Find the iframe that sent the message
-    const iframes = document.querySelectorAll('iframe');
-    const senderIframe = Array.from(iframes).find(f => f.contentWindow === event.source);
+    const iframes = document.querySelectorAll('iframe, frame');
+    const senderIframe = Array.from(iframes).find(f => (f as any).contentWindow === event.source);
     
+    let absoluteRect = rect;
     if (senderIframe) {
       const offset = senderIframe.getBoundingClientRect();
-      const absoluteRect = {
+      absoluteRect = {
         left: rect.left + offset.left,
         top: rect.top + offset.top,
-        right: rect.right + offset.left,
-        bottom: rect.bottom + offset.top,
+        right: (rect.right || (rect.left + rect.width)) + offset.left,
+        bottom: (rect.bottom || (rect.top + rect.height)) + offset.top,
         width: rect.width,
         height: rect.height
       };
+      console.log('QT Frame: Found sender iframe, calculated absolute rect', absoluteRect);
+    } else {
+      console.warn('QT Frame: Could not find sender iframe, using relative rect');
+    }
 
-      if (window === window.top) {
-        showPopup(text, absoluteRect);
-      } else {
-        // Continue bubbling up
-        window.parent.postMessage({
-          type: 'QT_SELECTION',
-          text,
-          rect: absoluteRect
-        }, '*');
-      }
+    if (window === window.top) {
+      showPopup(text, absoluteRect);
+    } else {
+      console.log('QT Frame: Bubbling selection up to parent');
+      window.parent.postMessage({
+        type: 'QT_SELECTION',
+        text,
+        rect: absoluteRect
+      }, '*');
     }
   }
 
@@ -192,44 +204,87 @@ const handleOutsideClick = (event: MouseEvent) => {
   }
 };
 
-function getSelectionData() {
-  // 1. Standard selection
+function getSelectionData(target?: EventTarget | null) {
+  console.log('QT: getSelectionData start', { target });
+  
+  // 1. Standard selection (regular text)
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0) {
     const text = selection.toString().trim();
     if (text) {
       try {
         const range = selection.getRangeAt(0);
-        return {
-          text,
-          rect: range.getBoundingClientRect()
-        };
-      } catch (e) {
-        // Range might be invalid in some edge cases
-      }
+        const rect = range.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          console.log('QT: Detected standard selection', { text, rect });
+          return {
+            text,
+            rect: {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height
+            }
+          };
+        }
+      } catch (e) {}
     }
   }
 
   // 2. Input/Textarea selection
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+  // Try to find the input element: check target, then activeElement, then Shadow DOM
+  let input: HTMLInputElement | HTMLTextAreaElement | null = null;
+  
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    input = target;
+  } else {
+    let active = document.activeElement;
+    // Drill into shadow roots
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+      active = active.shadowRoot.activeElement;
+    }
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      input = active;
+    }
+  }
+
+  if (input) {
     try {
-      const start = activeElement.selectionStart;
-      const end = activeElement.selectionEnd;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      console.log('QT: Checking input selection', { 
+        tagName: input.tagName, 
+        start, 
+        end, 
+        valueLength: input.value.length 
+      });
+      
       if (start !== null && end !== null && start !== end) {
-        const text = activeElement.value.substring(start, end).trim();
+        const text = input.value.substring(start, end).trim();
         if (text) {
+          const rect = input.getBoundingClientRect();
+          console.log('QT: Detected input selection', { text, rect });
           return {
             text,
-            rect: activeElement.getBoundingClientRect()
+            rect: {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height
+            }
           };
         }
       }
     } catch (e) {
-      // Some input types don't support selection properties
+      console.warn('QT: Error reading input selection', e);
     }
   }
 
+  console.log('QT: No selection detected');
   return null;
 }
 
@@ -260,9 +315,12 @@ document.addEventListener('mouseup', (event) => {
   
   if (isInsidePopup) return;
 
+  // Store target immediately as it might change after timeout
+  const target = event.target;
+
   // Delay to ensure selection is updated
   setTimeout(() => {
-    const data = getSelectionData();
+    const data = getSelectionData(target);
     if (data) {
       showPopup(data.text, data.rect);
     }
