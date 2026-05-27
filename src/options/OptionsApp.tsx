@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { LANGUAGES } from '../shared/languages';
 import { getAccentsForLanguage } from '../shared/accents';
-import { DEFAULT_SETTINGS, UI_CONSTANTS, DEFAULT_HOTKEYS } from '../shared/constants';
+import { DEFAULT_SETTINGS, DEFAULT_HOTKEYS } from '../shared/constants';
+
+type SettingsTab = 'general' | 'engine' | 'voice' | 'theme' | 'hotkeys';
 
 export const OptionsApp: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [preferredVoices, setPreferredVoices] = useState<Record<string, string>>({});
@@ -24,7 +27,9 @@ export const OptionsApp: React.FC = () => {
   const [azureKey, setAzureKey] = useState(DEFAULT_SETTINGS.AZURE_KEY);
   const [azureRegion, setAzureRegion] = useState(DEFAULT_SETTINGS.AZURE_REGION);
   const [azureVoices, setAzureVoices] = useState<any[]>([]);
-  const [isAzureLoading, setIsAzureLoading] = useState(false);
+
+  // Voice Test state
+  const [testText, setVoiceTestText] = useState("I'm ready to translate your world. Choose a voice that sounds best to you!");
 
   useEffect(() => {
     chrome.storage.local.get([
@@ -59,7 +64,6 @@ export const OptionsApp: React.FC = () => {
   }, [ttsEngine, azureKey, azureRegion]);
 
   const fetchAzureVoices = async () => {
-    setIsAzureLoading(true);
     try {
       const url = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
       const response = await fetch(url, { headers: { 'Ocp-Apim-Subscription-Key': azureKey } });
@@ -70,7 +74,6 @@ export const OptionsApp: React.FC = () => {
     } catch (e) {
       console.error('Failed to fetch Azure voices:', e);
     }
-    setIsAzureLoading(false);
   };
 
   useEffect(() => {
@@ -98,7 +101,6 @@ export const OptionsApp: React.FC = () => {
     return undefined;
   }, [theme]);
 
-  // Keep the document attribute in sync for components outside this React tree or for initial CSS
   useEffect(() => {
     const root = document.documentElement;
     const currentAppliedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme;
@@ -138,17 +140,36 @@ export const OptionsApp: React.FC = () => {
         headers: { 'Ocp-Apim-Subscription-Key': azureKey }
       });
       if (response.ok) {
-        const voices = await response.json();
-        setStatus(`Success! Found ${voices.length} Azure voices.`);
+        const voicesData = await response.json();
+        setStatus(`Success! Found ${voicesData.length} Azure voices.`);
       } else {
         setStatus(`Azure Error: ${response.status} ${response.statusText}`);
       }
     } catch (e: any) {
-      console.error('Azure Test Error:', e);
       setStatus(`Connection Failed: ${e.message || 'Unknown error'}`);
     }
-    // Don't auto-clear success/error messages too quickly so user can see them
     setTimeout(() => setStatus(''), 8000);
+  };
+
+  const handleTestVoice = (lang: string) => {
+    const accents = getAccentsForLanguage(lang);
+    const selectedAccent = preferredAccents[lang] || (accents.length > 0 ? accents[0].code : lang);
+    
+    // Use language-specific test text if the general one is default
+    let textToSpeak = testText;
+    if (testText === "I'm ready to translate your world. Choose a voice that sounds best to you!") {
+      if (lang.startsWith('ru')) textToSpeak = "Привет! Я готов переводить ваш мир. Выберите голос, который вам нравится.";
+      else if (lang.startsWith('en')) textToSpeak = "Hello! I am ready to translate your world. Choose a voice you like.";
+    }
+
+    chrome.runtime.sendMessage({ 
+      type: "SPEAK", 
+      payload: { 
+        text: textToSpeak, 
+        langCode: selectedAccent,
+        bypassCache: true // Crucial for testing different voices
+      } 
+    });
   };
 
   const handleClearCache = () => {
@@ -172,13 +193,11 @@ export const OptionsApp: React.FC = () => {
     const accents = getAccentsForLanguage(lang);
     const selectedAccent = preferredAccents[lang] || (accents.length > 0 ? accents[0].code : lang);
     
-    // Determine which voices to show
     let currentVoices: any[] = [];
     if (ttsEngine === 'azure') {
       currentVoices = azureVoices
         .filter(v => v.Locale.toLowerCase().startsWith(selectedAccent.split('-')[0].toLowerCase()))
         .sort((a, b) => {
-          // Put Neural voices first
           const aNeural = a.ShortName.includes('Neural');
           const bNeural = b.ShortName.includes('Neural');
           if (aNeural && !bNeural) return -1;
@@ -190,485 +209,271 @@ export const OptionsApp: React.FC = () => {
     }
 
     return (
-      <div className="voice-selector">
-        <label>Configuration for {LANGUAGES[lang as keyof typeof LANGUAGES] || lang}</label>
+      <div className="voice-selector-box">
+        <h4>{LANGUAGES[lang as keyof typeof LANGUAGES] || lang}</h4>
         
-        {accents.length > 1 && (
-          <div className="accent-field" style={{ marginBottom: '10px' }}>
-            <p className="description">Choose Accent:</p>
-            <select 
-              value={selectedAccent} 
-              onChange={(e) => {
-                const newAccent = e.target.value;
-                setPreferredAccents({ ...preferredAccents, [lang]: newAccent });
-                // Reset voice when accent changes to ensure compatibility
-                const newVoices = { ...preferredVoices };
-                delete newVoices[lang];
-                setPreferredVoices(newVoices);
-              }}
-            >
-              {accents.map(a => (
-                <option key={a.code} value={a.code}>{a.name} ({a.label})</option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="input-field mini">
+          <label>Accent</label>
+          <select 
+            value={selectedAccent} 
+            onChange={(e) => {
+              const newAccent = e.target.value;
+              setPreferredAccents({ ...preferredAccents, [lang]: newAccent });
+              const newVoices = { ...preferredVoices };
+              delete newVoices[lang];
+              setPreferredVoices(newVoices);
+            }}
+          >
+            {accents.map(a => <option key={a.code} value={a.code}>{a.name} ({a.label})</option>)}
+          </select>
+        </div>
 
-        <div className="voice-field">
-          <p className="description">
-            Preferred {ttsEngine === 'azure' ? 'Azure Neural' : 'System'} Voice:
-            {isAzureLoading && ttsEngine === 'azure' && <span style={{ marginLeft: '10px', fontSize: '11px', color: 'var(--primary-color)' }}>Loading...</span>}
-          </p>
+        <div className="input-field mini">
+          <label>Specific Voice</label>
           <select 
             value={preferredVoices[lang] || ''} 
             onChange={(e) => setPreferredVoices({ ...preferredVoices, [lang]: e.target.value })}
           >
-            <option value="">{ttsEngine === 'azure' ? '-- Select Azure Voice --' : 'System Default'}</option>
+            <option value="">{ttsEngine === 'azure' ? '-- Default Neural --' : 'System Default'}</option>
             {ttsEngine === 'azure' ? (
               currentVoices.map((voice) => (
                 <option key={voice.ShortName} value={voice.ShortName}>
-                  {voice.DisplayName} {voice.ShortName.includes('Neural') ? '(Neural)' : ''} [{voice.Locale}]
+                  {voice.DisplayName} {voice.ShortName.includes('Neural') ? '(Neural)' : ''}
                 </option>
               ))
             ) : (
               currentVoices.map((voice) => (
-                <option key={voice.voiceName} value={voice.voiceName}>
-                  {voice.voiceName} ({voice.lang})
-                </option>
+                <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
               ))
             )}
           </select>
         </div>
+        <button className="test-voice-btn" onClick={() => handleTestVoice(lang)}>Hear Voice Preview</button>
       </div>
     );
   };
 
-  return (
-    <div className="container">
-      <div className="card">
-        <header className="card-header">
-          <div className="logo-icon">🌐</div>
-          <h1>Quick Translator Settings</h1>
-        </header>
-
-        <main className="card-body">
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'general':
+        return (
+          <>
+            <section className="setting-group">
+              <h3>Language Directions</h3>
+              <div className="input-field">
+                <label>Native Language</label>
+                <p className="description">The primary language you speak.</p>
+                <select value={nativeLang} onChange={(e) => setNativeLang(e.target.value)}>{langOptions}</select>
+              </div>
+              <div className="input-field">
+                <label>Learning Language</label>
+                <p className="description">The language you are studying.</p>
+                <select value={learningLang} onChange={(e) => setLearningLang(e.target.value)}>{langOptions}</select>
+              </div>
+            </section>
+            <section className="setting-group">
+              <h3>Behavior</h3>
+              <div className="input-field">
+                <label>History Limit</label>
+                <input type="number" min="1" max="100" value={historyLimit} onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 20)} />
+              </div>
+              <div className="input-field">
+                <label>Auto-play Limit (chars)</label>
+                <input type="number" min="10" max="1000" value={autoPlaybackLimit} onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || 100)} />
+              </div>
+            </section>
+          </>
+        );
+      case 'engine':
+        return (
           <section className="setting-group">
-            <h3>TTS Engine</h3>
-            <p className="description">Choose your preferred Text-to-Speech service.</p>
+            <h3>TTS Provider</h3>
             <div className="engine-selector">
-              <button 
-                className={`engine-btn ${ttsEngine === 'google' ? 'active' : ''}`}
-                onClick={() => setTtsEngine('google')}
-              >
-                Google (Default)
-              </button>
-              <button 
-                className={`engine-btn ${ttsEngine === 'azure' ? 'active' : ''}`}
-                onClick={() => setTtsEngine('azure')}
-              >
-                Azure AI Speech
-              </button>
+              <button className={`engine-btn ${ttsEngine === 'google' ? 'active' : ''}`} onClick={() => setTtsEngine('google')}>Google (Standard)</button>
+              <button className={`engine-btn ${ttsEngine === 'azure' ? 'active' : ''}`} onClick={() => setTtsEngine('azure')}>Azure AI (Neural)</button>
             </div>
-
             {ttsEngine === 'azure' && (
-              <div className="azure-settings">
+              <div className="azure-config-panel">
                 <div className="input-field">
-                  <label>Azure API Key</label>
-                  <input 
-                    type="password" 
-                    value={azureKey} 
-                    onChange={(e) => setAzureKey(e.target.value)}
-                    placeholder="Enter your Azure Speech key"
-                  />
+                  <label>API Key</label>
+                  <input type="password" value={azureKey} onChange={(e) => setAzureKey(e.target.value)} placeholder="Azure Speech Key" />
                 </div>
                 <div className="input-field">
-                  <label>Azure Region</label>
-                  <input 
-                    type="text" 
-                    value={azureRegion} 
-                    onChange={(e) => setAzureRegion(e.target.value)}
-                    placeholder="e.g. westeurope"
-                  />
+                  <label>Region</label>
+                  <input type="text" value={azureRegion} onChange={(e) => setAzureRegion(e.target.value)} placeholder="e.g. westeurope" />
                 </div>
-                <button className="test-btn" onClick={handleTestAzure}>
-                  Test Azure Connection
-                </button>
+                <button className="secondary-btn" onClick={handleTestAzure}>Test Connection</button>
               </div>
             )}
           </section>
-
+        );
+      case 'voice':
+        return (
           <section className="setting-group">
-            <h3>Languages</h3>
-            <div className="input-field">
-              <label>Native Language (Primary)</label>
-              <p className="description">Source will translate TO this by default.</p>
-              <select value={nativeLang} onChange={(e) => setNativeLang(e.target.value)}>
-                {langOptions}
-              </select>
+            <h3>Voice Personalization</h3>
+            <div className="test-panel">
+              <label>Test Phrase</label>
+              <textarea value={testText} onChange={(e) => setVoiceTestText(e.target.value)} rows={3} />
             </div>
-
-            <div className="input-field">
-              <label>Learning Language</label>
-              <p className="description">Used if source is already in your native language.</p>
-              <select value={learningLang} onChange={(e) => setLearningLang(e.target.value)}>
-                {langOptions}
-              </select>
+            <div className="voice-grid">
+              <VoiceSelector lang={nativeLang} />
+              <VoiceSelector lang={learningLang} />
             </div>
           </section>
-
+        );
+      case 'theme':
+        return (
           <section className="setting-group">
-            <h3>Preferred Voices</h3>
-            <p className="description" style={{ marginBottom: '15px' }}>Configure specific voices for your languages if available.</p>
-            <VoiceSelector lang={nativeLang} />
-            <VoiceSelector lang={learningLang} />
-          </section>
-
-          <section className="setting-group">
-            <h3>Appearance & Behavior</h3>
+            <h3>Visual Style</h3>
             <div className="input-field">
-              <label>Theme</label>
-              <p className="description">Choose between light, dark or system preference.</p>
-              <select value={theme} onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}>
-                <option value="system">System Default</option>
+              <label>Theme Mode</label>
+              <select value={theme} onChange={(e) => setTheme(e.target.value as any)}>
+                <option value="system">Follow System</option>
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
               </select>
             </div>
-
             <div className="input-field">
               <label>UI Scale ({uiScale.toFixed(1)}x)</label>
-              <p className="description">Adjust the size of the translation window.</p>
-              <input
-                type="range"
-                min={UI_CONSTANTS.MIN_UI_SCALE}
-                max={UI_CONSTANTS.MAX_UI_SCALE}
-                step="0.1"
-                value={uiScale}
-                onChange={(e) => setUiScale(parseFloat(e.target.value))}
-              />
-            </div>
-
-            <div className="input-field">
-              <label>History Limit</label>
-              <p className="description">Number of recent translations to remember.</p>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={historyLimit}
-                onChange={(e) => setHistoryLimit(parseInt(e.target.value) || DEFAULT_SETTINGS.HISTORY_LIMIT)}
-              />
-            </div>
-
-            <div className="input-field">
-              <label>Auto-play character limit</label>
-              <p className="description">Don't auto-play if text is longer than this.</p>
-              <input
-                type="number"
-                min="10"
-                max="1000"
-                value={autoPlaybackLimit}
-                onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT)}
-              />
+              <input type="range" min="0.8" max="1.5" step="0.1" value={uiScale} onChange={(e) => setUiScale(parseFloat(e.target.value))} />
             </div>
           </section>
-
+        );
+      case 'hotkeys':
+        return (
           <section className="setting-group">
-            <h3>Hotkeys</h3>
-            <p className="description">Click on a key code to record a new hotkey.</p>
+            <h3>Keyboard Shortcuts</h3>
             <div className="hotkey-grid">
               {Object.entries(hotkeys).map(([action, code]) => (
                 <div key={action} className="hotkey-item">
                   <span className="hotkey-label">{action.replace('_', ' ')}</span>
-                  <button 
-                    className={`hotkey-record-btn ${recordingKey === action ? 'recording' : ''}`}
-                    onClick={() => setRecordingKey(action)}
-                  >
-                    {recordingKey === action ? 'Press any key...' : code || 'None'}
+                  <button className={`hotkey-record-btn ${recordingKey === action ? 'recording' : ''}`} onClick={() => setRecordingKey(action)}>
+                    {recordingKey === action ? 'Press key...' : code || 'None'}
                   </button>
                 </div>
               ))}
             </div>
           </section>
-        </main>
+        );
+      default: return null;
+    }
+  };
 
-        <footer className="card-footer">
-          <div className="footer-actions">
-            <button className="save-btn" onClick={handleSave}>
-              Save Configuration
-            </button>
-            <button className="clear-btn" onClick={handleClearCache}>
-              Clear All Cache
-            </button>
+  return (
+    <div className="app-layout">
+      <div className="app-container">
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <span className="logo">🌐</span>
+            <h2>Settings</h2>
           </div>
-          {status && <div className="status-message">{status}</div>}
-        </footer>
+          <nav className="nav-menu">
+            <button className={activeTab === 'general' ? 'active' : ''} onClick={() => setActiveTab('general')}>General</button>
+            <button className={activeTab === 'engine' ? 'active' : ''} onClick={() => setActiveTab('engine')}>TTS Engine</button>
+            <button className={activeTab === 'voice' ? 'active' : ''} onClick={() => setActiveTab('voice')}>Voice</button>
+            <button className={activeTab === 'theme' ? 'active' : ''} onClick={() => setActiveTab('theme')}>Theme & Scale</button>
+            <button className={activeTab === 'hotkeys' ? 'active' : ''} onClick={() => setActiveTab('hotkeys')}>Hotkeys</button>
+          </nav>
+          <div className="sidebar-footer">
+            <button className="clear-cache-link" onClick={handleClearCache}>Clear All Cache</button>
+          </div>
+        </aside>
+
+        <main className="main-content">
+          <header className="content-header">
+            <h1>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+            <button className="save-top-btn" onClick={handleSave}>Save Changes</button>
+          </header>
+          <div className="tab-body">{renderContent()}</div>
+          {status && <div className="floating-status">{status}</div>}
+        </main>
       </div>
 
       <style>{`
         :root {
-          --primary-color: #3498db;
-          --danger-color: #e74c3c;
-          --bg-color: #f5f7fa;
-          --card-bg: #ffffff;
-          --header-bg: #fcfcfd;
-          --text-color: #2c3e50;
-          --text-secondary: #7f8c8d;
-          --border-color: #e0e6ed;
-          --input-bg: #ffffff;
+          --primary: #3498db; --bg: #f8f9fa; --sidebar-bg: #ffffff; --card: #ffffff;
+          --text: #2c3e50; --text-dim: #7f8c8d; --border: #e0e6ed; --input-bg: #ffffff;
         }
-
         [data-theme='dark'] {
-          --bg-color: #1a1a1a;
-          --card-bg: #2d2d2d;
-          --header-bg: #252525;
-          --text-color: #e0e0e0;
-          --text-secondary: #a0a0a0;
-          --border-color: #404040;
-          --input-bg: #3d3d3d;
+          --bg: #121212; --sidebar-bg: #1e1e1e; --card: #252525;
+          --text: #e0e0e0; --text-dim: #a0a0a0; --border: #333333; --input-bg: #2d2d2d;
         }
-
-        body {
-          background-color: var(--bg-color);
-          margin: 0;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          color: var(--text-color);
-          transition: background-color 0.3s, color 0.3s;
-        }
-        .container {
+        body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        .app-layout {
           display: flex;
           justify-content: center;
-          padding: 40px 20px;
+          min-height: 100vh;
         }
-        .card {
-          background: var(--card-bg);
+        .app-container {
+          display: flex;
           width: 100%;
-          max-width: 500px;
-          border-radius: 12px;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-          border: 1px solid var(--border-color);
-          overflow: hidden;
-          transition: background-color 0.3s, border-color 0.3s;
+          max-width: 1100px;
+          background: var(--sidebar-bg);
+          box-shadow: 0 0 30px rgba(0,0,0,0.05);
         }
-        .card-header {
-          background: var(--header-bg);
-          padding: 24px;
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          align-items: center;
-          gap: 16px;
+        
+        .sidebar { 
+          width: 240px; 
+          background: var(--sidebar-bg); 
+          border-right: 1px solid var(--border); 
+          display: flex; 
+          flex-direction: column; 
+          padding: 20px 0;
+          flex-shrink: 0;
         }
-        .logo-icon {
-          font-size: 32px;
-        }
-        .card-header h1 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 700;
-        }
-        .card-body {
-          padding: 24px;
-        }
-        .setting-group {
-          margin-bottom: 32px;
-        }
-        .setting-group:last-child {
-          margin-bottom: 0;
-        }
-        .setting-group h3 {
-          font-size: 14px;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          color: var(--text-secondary);
-          margin: 0 0 16px 0;
-          border-bottom: 1px solid var(--border-color);
-          padding-bottom: 8px;
-        }
-        .input-field {
-          margin-bottom: 20px;
-        }
-        .input-field:last-child {
-          margin-bottom: 0;
-        }
-        .input-field label {
-          display: block;
-          font-weight: 600;
-          margin-bottom: 4px;
-          font-size: 15px;
-        }
-        .description {
-          font-size: 13px;
-          color: var(--text-secondary);
-          margin: 0 0 8px 0;
-        }
-        select, input[type="number"], input[type="range"] {
-          width: 100%;
-          padding: 10px;
-          border: 1px solid var(--border-color);
-          border-radius: 6px;
-          font-size: 14px;
-          outline: none;
-          background-color: var(--input-bg);
-          color: var(--text-color);
-          transition: border-color 0.2s, background-color 0.3s, color 0.3s;
-        }
-        select:focus, input[type="number"]:focus {
-          border-color: var(--primary-color);
-        }
-        input[type="range"] {
-          padding: 0;
-          height: 30px;
-          background: transparent;
-        }
-        .card-footer {
-          padding: 20px 24px;
-          background: var(--header-bg);
-          border-top: 1px solid var(--border-color);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 12px;
-        }
-        .footer-actions {
-          display: flex;
-          gap: 12px;
-        }
-        .save-btn {
-          background-color: var(--primary-color);
-          color: white;
-          border: none;
-          padding: 12px 24px;
-          border-radius: 6px;
-          font-weight: 600;
-          font-size: 15px;
-          cursor: pointer;
-          transition: background-color 0.2s, transform 0.1s;
-        }
-        .save-btn:hover {
-          background-color: #2980b9;
-        }
-        .clear-btn {
-          background-color: transparent;
-          color: var(--danger-color);
-          border: 1px solid var(--danger-color);
-          padding: 11px 20px;
-          border-radius: 6px;
-          font-weight: 600;
-          font-size: 14px;
-          cursor: pointer;
-          transition: background-color 0.2s, color 0.2s;
-        }
-        .clear-btn:hover {
-          background-color: var(--danger-color);
-          color: white;
-        }
-        .save-btn:active, .clear-btn:active {
-          transform: translateY(1px);
-        }
-        .status-message {
-          color: #27ae60;
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .voice-selector {
-          margin-bottom: 15px;
-        }
-        .voice-selector label {
-          display: block;
-          font-size: 13px;
-          font-weight: 600;
-          margin-bottom: 5px;
-        }
+        .sidebar-header { padding: 0 24px 20px; display: flex; align-items: center; gap: 12px; }
+        .sidebar-header .logo { font-size: 24px; }
+        .sidebar-header h2 { font-size: 18px; margin: 0; }
+        
+        .nav-menu { flex: 1; display: flex; flex-direction: column; }
+        .nav-menu button { background: none; border: none; padding: 12px 24px; text-align: left; font-size: 15px; color: var(--text-dim); cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-menu button:hover { background: rgba(0,0,0,0.03); color: var(--text); }
+        .nav-menu button.active { background: rgba(52, 152, 219, 0.1); color: var(--primary); border-left-color: var(--primary); font-weight: 600; }
+        
+        .sidebar-footer { padding: 20px 24px; }
+        .clear-cache-link { background: none; border: none; color: #e74c3c; font-size: 13px; cursor: pointer; padding: 0; opacity: 0.8; }
+        .clear-cache-link:hover { text-decoration: underline; opacity: 1; }
 
-        .hotkey-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 15px;
-          margin-top: 10px;
-        }
-        .hotkey-item {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-        .hotkey-label {
-          font-size: 12px;
-          color: var(--text-secondary);
-          text-transform: capitalize;
-        }
-        .hotkey-record-btn {
-          padding: 8px;
-          background: var(--input-bg);
-          border: 1px solid var(--border-color);
-          border-radius: 6px;
-          font-family: monospace;
-          font-size: 13px;
-          cursor: pointer;
-          color: var(--text-color);
-          transition: all 0.2s;
-          text-align: center;
-        }
-        .hotkey-record-btn:hover {
-          border-color: var(--primary-color);
-        }
-        .hotkey-record-btn.recording {
-          background: var(--primary-color);
-          color: white;
-          border-color: var(--primary-color);
-          animation: pulse 1.5s infinite;
-        }
+        .main-content { flex: 1; padding: 40px 60px; position: relative; max-width: 800px; }
+        .content-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .content-header h1 { margin: 0; font-size: 28px; }
+        .save-top-btn { background: var(--primary); color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        
+        .setting-group { margin-bottom: 40px; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .setting-group h3 { font-size: 14px; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 20px; }
+        
+        .input-field { margin-bottom: 20px; }
+        .input-field label { display: block; font-weight: 600; margin-bottom: 4px; }
+        .description { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
+        select, input[type="text"], input[type="password"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); outline: none; }
+        
+        .engine-selector { display: flex; gap: 12px; margin-bottom: 20px; }
+        .engine-btn { flex: 1; padding: 15px; background: var(--input-bg); border: 2px solid var(--border); border-radius: 10px; cursor: pointer; color: var(--text-dim); font-weight: 600; transition: all 0.2s; }
+        .engine-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(52, 152, 219, 0.05); }
+        
+        .azure-config-panel { padding: 20px; background: rgba(0,0,0,0.02); border-radius: 10px; border: 1px dashed var(--border); }
+        .secondary-btn { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        
+        .test-panel { margin-bottom: 30px; }
+        .test-panel textarea { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); resize: none; }
+        .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .voice-selector-box { padding: 20px; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 10px; }
+        .voice-selector-box h4 { margin: 0 0 15px 0; font-size: 16px; }
+        .input-field.mini { margin-bottom: 12px; }
+        .input-field.mini label { font-size: 12px; color: var(--text-dim); }
+        .test-voice-btn { width: 100%; margin-top: 10px; background: rgba(52, 152, 219, 0.1); border: 1px solid var(--primary); color: var(--primary); padding: 8px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .test-voice-btn:hover { background: var(--primary); color: white; }
 
-        .engine-selector {
-          display: flex;
-          gap: 10px;
-          margin-bottom: 20px;
-        }
-        .engine-btn {
-          flex: 1;
-          padding: 10px;
-          background: var(--input-bg);
-          border: 2px solid var(--border-color);
-          border-radius: 8px;
-          cursor: pointer;
-          color: var(--text-secondary);
-          font-weight: 600;
-          transition: all 0.2s;
-        }
-        .engine-btn.active {
-          border-color: var(--primary-color);
-          color: var(--primary-color);
-          background: rgba(52, 152, 219, 0.1);
-        }
-        .azure-settings {
-          padding: 15px;
-          background: rgba(0,0,0,0.02);
-          border-radius: 8px;
-          border: 1px dashed var(--border-color);
-          margin-top: 10px;
-        }
-        .test-btn {
-          width: 100%;
-          padding: 8px;
-          background: transparent;
-          border: 1px solid var(--primary-color);
-          color: var(--primary-color);
-          border-radius: 6px;
-          cursor: pointer;
-          font-weight: 600;
-          transition: all 0.2s;
-          margin-top: 10px;
-        }
-        .test-btn:hover {
-          background: var(--primary-color);
-          color: white;
-        }
+        .hotkey-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .hotkey-item { display: flex; flex-direction: column; gap: 5px; }
+        .hotkey-label { font-size: 12px; color: var(--text-dim); text-transform: capitalize; }
+        .hotkey-record-btn { padding: 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text); font-family: monospace; }
+        .hotkey-record-btn.recording { background: var(--primary); color: white; animation: pulse 1.5s infinite; }
 
-        @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.7; }
-          100% { opacity: 1; }
-        }
+        .floating-status { position: fixed; bottom: 30px; right: 30px; background: #27ae60; color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); font-weight: 600; animation: slideIn 0.3s ease; z-index: 1000; }
+        @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
       `}</style>
     </div>
   );

@@ -62,8 +62,8 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
   }
 
   if (message.type === "SPEAK") {
-    const { text, langCode } = message.payload;
-    handleSpeak(text, langCode);
+    const { text, langCode, bypassCache } = message.payload;
+    handleSpeak(text, langCode, !!bypassCache);
     sendResponse({ success: true, version: VERSION });
     return false;
   }
@@ -109,9 +109,9 @@ async function handleStopAudio() {
   }
 }
 
-async function handleSpeak(text: string, langCode: string) {
+async function handleSpeak(text: string, langCode: string, bypassCache: boolean = false) {
   const mySpeechId = ++currentSpeechId;
-  console.log(`Background: handleSpeak start. Text: "${text}", Lang: ${langCode}, My ID: ${mySpeechId}`);
+  console.log(`Background: handleSpeak start. Text: "${text}", Lang: ${langCode}, Bypass: ${bypassCache}, My ID: ${mySpeechId}`);
   
   try {
     const settings = await chrome.storage.local.get(["preferredVoices", "preferredAccents", "ttsEngine", "azureKey", "azureRegion"]) as {
@@ -143,23 +143,22 @@ async function handleSpeak(text: string, langCode: string) {
 
     // Use selected engine
     if (engine === 'azure' && azureKey && azureRegion) {
-      await handleSpeakAzure(text, accentToUse, azureKey, azureRegion, mySpeechId);
+      await handleSpeakAzure(text, accentToUse, azureKey, azureRegion, mySpeechId, bypassCache);
     } else {
-      await handleSpeakGoogle(text, accentToUse, preferredVoices, mySpeechId);
+      await handleSpeakGoogle(text, accentToUse, preferredVoices, mySpeechId, bypassCache);
     }
   } catch (e) {
     console.error("Background Speak Error:", e);
   }
 }
 
-async function handleSpeakAzure(text: string, accentCode: string, key: string, region: string, mySpeechId: number) {
+async function handleSpeakAzure(text: string, accentCode: string, key: string, region: string, mySpeechId: number, bypassCache: boolean) {
   try {
     const cacheKey = `audio_azure_${accentCode}_${text.toLowerCase().trim()}`;
-    // FIX: Must request cacheKey in the get() call
     const settings = await chrome.storage.local.get([cacheKey, "preferredVoices", "azureVoicesCache"]);
     if (mySpeechId !== currentSpeechId) return;
 
-    if (settings[cacheKey]) {
+    if (!bypassCache && settings[cacheKey]) {
       console.log(`Background [Azure]: Using cached audio for ${accentCode}`);
       await playAudio(settings[cacheKey] as string, mySpeechId);
       return;
@@ -229,11 +228,11 @@ async function handleSpeakAzure(text: string, accentCode: string, key: string, r
     console.warn("Background [Azure]: Failed, falling back to Google", e);
     // Fallback logic could be complex, for now we just try handleSpeakGoogle
     // with empty preferences to ensure it works.
-    await handleSpeakGoogle(text, accentCode, {}, mySpeechId);
+    await handleSpeakGoogle(text, accentCode, {}, mySpeechId, bypassCache);
   }
 }
 
-async function handleSpeakGoogle(text: string, accentCode: string, preferredVoices: Record<string, string>, mySpeechId: number) {
+async function handleSpeakGoogle(text: string, accentCode: string, preferredVoices: Record<string, string>, mySpeechId: number, bypassCache: boolean) {
   const preferredVoiceName = preferredVoices[accentCode] || preferredVoices[accentCode.split('-')[0]];
 
   if (preferredVoiceName) {
@@ -249,7 +248,7 @@ async function handleSpeakGoogle(text: string, accentCode: string, preferredVoic
   const cached = await chrome.storage.local.get(cacheKey);
   if (mySpeechId !== currentSpeechId) return;
 
-  if (cached[cacheKey]) {
+  if (!bypassCache && cached[cacheKey]) {
     console.log(`Background [Google]: Using cached audio`);
     await playAudio(cached[cacheKey] as string, mySpeechId);
     return;
