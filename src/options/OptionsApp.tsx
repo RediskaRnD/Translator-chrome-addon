@@ -11,6 +11,7 @@ export const OptionsApp: React.FC = () => {
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [preferredVoices, setPreferredVoices] = useState<Record<string, string>>({});
   const [preferredAccents, setPreferredAccents] = useState<Record<string, string>>({});
+  const [preferredGenders, setPreferredGenders] = useState<Record<string, 'Male' | 'Female'>>({});
   const [historyLimit, setHistoryLimit] = useState(DEFAULT_SETTINGS.HISTORY_LIMIT);
   const [uiScale, setUiScale] = useState(DEFAULT_SETTINGS.UI_SCALE);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(DEFAULT_SETTINGS.THEME);
@@ -22,18 +23,16 @@ export const OptionsApp: React.FC = () => {
   const [status, setStatus] = useState('');
   const [recordingKey, setRecordingKey] = useState<string | null>(null);
 
-  // Azure settings
   const [ttsEngine, setTtsEngine] = useState<'google' | 'azure'>(DEFAULT_SETTINGS.TTS_ENGINE);
   const [azureKey, setAzureKey] = useState(DEFAULT_SETTINGS.AZURE_KEY);
   const [azureRegion, setAzureRegion] = useState(DEFAULT_SETTINGS.AZURE_REGION);
   const [azureVoices, setAzureVoices] = useState<any[]>([]);
 
-  // Voice Test state
   const [testText, setVoiceTestText] = useState("I'm ready to translate your world. Choose a voice that sounds best to you!");
 
   useEffect(() => {
     chrome.storage.local.get([
-      'nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 
+      'nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'preferredGenders',
       'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit', 
       'hotkeys', 'ttsEngine', 'azureKey', 'azureRegion'
     ], (settings) => {
@@ -41,6 +40,7 @@ export const OptionsApp: React.FC = () => {
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.preferredVoices) setPreferredVoices(settings.preferredVoices as Record<string, string>);
       if (settings.preferredAccents) setPreferredAccents(settings.preferredAccents as Record<string, string>);
+      if (settings.preferredGenders) setPreferredGenders(settings.preferredGenders as Record<string, 'Male' | 'Female'>);
       if (settings.historyLimit) setHistoryLimit(settings.historyLimit as number);
       if (settings.uiScale) setUiScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
@@ -109,19 +109,9 @@ export const OptionsApp: React.FC = () => {
 
   const handleSave = () => {
     chrome.storage.local.set({
-      nativeLang,
-      learningLang,
-      preferredVoices,
-      preferredAccents,
-      historyLimit,
-      uiScale,
-      theme,
-      autoPlayback,
-      autoPlaybackLimit,
-      hotkeys,
-      ttsEngine,
-      azureKey,
-      azureRegion
+      nativeLang, learningLang, preferredVoices, preferredAccents, preferredGenders,
+      historyLimit, uiScale, theme, autoPlayback, autoPlaybackLimit, 
+      hotkeys, ttsEngine, azureKey, azureRegion
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -129,25 +119,18 @@ export const OptionsApp: React.FC = () => {
   };
 
   const handleTestAzure = async () => {
-    if (!azureKey || !azureRegion) {
-      setStatus('Please enter Azure Key and Region first');
-      return;
-    }
+    if (!azureKey || !azureRegion) { setStatus('Please enter Azure Key and Region first'); return; }
     setStatus('Testing Azure connection...');
     try {
       const url = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
-      const response = await fetch(url, {
-        headers: { 'Ocp-Apim-Subscription-Key': azureKey }
-      });
+      const response = await fetch(url, { headers: { 'Ocp-Apim-Subscription-Key': azureKey } });
       if (response.ok) {
         const voicesData = await response.json();
         setStatus(`Success! Found ${voicesData.length} Azure voices.`);
       } else {
         setStatus(`Azure Error: ${response.status} ${response.statusText}`);
       }
-    } catch (e: any) {
-      setStatus(`Connection Failed: ${e.message || 'Unknown error'}`);
-    }
+    } catch (e: any) { setStatus(`Connection Failed: ${e.message || 'Unknown error'}`); }
     setTimeout(() => setStatus(''), 8000);
   };
 
@@ -155,7 +138,6 @@ export const OptionsApp: React.FC = () => {
     const accents = getAccentsForLanguage(lang);
     const selectedAccent = preferredAccents[lang] || (accents.length > 0 ? accents[0].code : lang);
     
-    // Use language-specific test text if the general one is default
     let textToSpeak = testText;
     if (testText === "I'm ready to translate your world. Choose a voice that sounds best to you!") {
       if (lang.startsWith('ru')) textToSpeak = "Привет! Я готов переводить ваш мир. Выберите голос, который вам нравится.";
@@ -167,20 +149,17 @@ export const OptionsApp: React.FC = () => {
       payload: { 
         text: textToSpeak, 
         langCode: selectedAccent,
-        bypassCache: true // Crucial for testing different voices
+        bypassCache: true,
+        options: {
+          ttsEngine,
+          azureKey,
+          azureRegion,
+          preferredVoices,
+          preferredAccents,
+          preferredGenders
+        }
       } 
     });
-  };
-
-  const handleClearCache = () => {
-    if (confirm('Are you sure you want to clear all translation history and audio cache?')) {
-      chrome.runtime.sendMessage({ type: "CLEAR_CACHE" }, (res) => {
-        if (res && res.success) {
-          setStatus('Cache cleared successfully!');
-          setTimeout(() => setStatus(''), 3000);
-        }
-      });
-    }
   };
 
   const langOptions = Object.entries(LANGUAGES)
@@ -192,11 +171,18 @@ export const OptionsApp: React.FC = () => {
   const VoiceSelector: React.FC<{ lang: string }> = ({ lang }) => {
     const accents = getAccentsForLanguage(lang);
     const selectedAccent = preferredAccents[lang] || (accents.length > 0 ? accents[0].code : lang);
+    const selectedGender = preferredGenders[lang] || 'Female';
     
     let currentVoices: any[] = [];
+    let availableAzureLocales: string[] = [];
+
     if (ttsEngine === 'azure') {
-      currentVoices = azureVoices
-        .filter(v => v.Locale.toLowerCase().startsWith(selectedAccent.split('-')[0].toLowerCase()))
+      const baseLang = lang.split('-')[0].toLowerCase();
+      const relevantVoices = azureVoices.filter(v => v.Locale.toLowerCase().startsWith(baseLang));
+      availableAzureLocales = Array.from(new Set(relevantVoices.map(v => v.Locale))).sort();
+
+      currentVoices = relevantVoices
+        .filter(v => v.Locale === selectedAccent && v.Gender === selectedGender)
         .sort((a, b) => {
           const aNeural = a.ShortName.includes('Neural');
           const bNeural = b.ShortName.includes('Neural');
@@ -213,32 +199,50 @@ export const OptionsApp: React.FC = () => {
         <h4>{LANGUAGES[lang as keyof typeof LANGUAGES] || lang}</h4>
         
         <div className="input-field mini">
-          <label>Accent</label>
+          <label>Region / Accent</label>
           <select 
             value={selectedAccent} 
             onChange={(e) => {
               const newAccent = e.target.value;
               setPreferredAccents({ ...preferredAccents, [lang]: newAccent });
               const newVoices = { ...preferredVoices };
+              delete newVoices[newAccent];
               delete newVoices[lang];
               setPreferredVoices(newVoices);
             }}
           >
-            {accents.map(a => <option key={a.code} value={a.code}>{a.name} ({a.label})</option>)}
+            {ttsEngine === 'azure' && availableAzureLocales.length > 0 ? (
+              availableAzureLocales.map(loc => <option key={loc} value={loc}>{loc}</option>)
+            ) : (
+              accents.map(a => <option key={a.code} value={a.code}>{a.name} ({a.label})</option>)
+            )}
           </select>
         </div>
+
+        {ttsEngine === 'azure' && (
+          <div className="input-field mini">
+            <label>Gender</label>
+            <div className="gender-toggle">
+              <button className={selectedGender === 'Female' ? 'active' : ''} onClick={() => setPreferredGenders({...preferredGenders, [lang]: 'Female'})}>Female</button>
+              <button className={selectedGender === 'Male' ? 'active' : ''} onClick={() => setPreferredGenders({...preferredGenders, [lang]: 'Male'})}>Male</button>
+            </div>
+          </div>
+        )}
 
         <div className="input-field mini">
           <label>Specific Voice</label>
           <select 
-            value={preferredVoices[lang] || ''} 
-            onChange={(e) => setPreferredVoices({ ...preferredVoices, [lang]: e.target.value })}
+            value={preferredVoices[selectedAccent] || preferredVoices[lang] || ''} 
+            onChange={(e) => {
+              const voiceKey = ttsEngine === 'azure' ? selectedAccent : lang;
+              setPreferredVoices({ ...preferredVoices, [voiceKey]: e.target.value });
+            }}
           >
-            <option value="">{ttsEngine === 'azure' ? '-- Default Neural --' : 'System Default'}</option>
+            <option value="">{ttsEngine === 'azure' ? (currentVoices.length > 0 ? `-- Default ${selectedGender} --` : '-- No voices --') : 'System Default'}</option>
             {ttsEngine === 'azure' ? (
               currentVoices.map((voice) => (
                 <option key={voice.ShortName} value={voice.ShortName}>
-                  {voice.DisplayName} {voice.ShortName.includes('Neural') ? '(Neural)' : ''}
+                  {voice.DisplayName} {voice.ShortName.includes('Neural') ? '(N)' : ''}
                 </option>
               ))
             ) : (
@@ -248,7 +252,7 @@ export const OptionsApp: React.FC = () => {
             )}
           </select>
         </div>
-        <button className="test-voice-btn" onClick={() => handleTestVoice(lang)}>Hear Voice Preview</button>
+        <button className="test-voice-btn" onClick={() => handleTestVoice(lang)} disabled={ttsEngine === 'azure' && currentVoices.length === 0}>Hear Voice Preview</button>
       </div>
     );
   };
@@ -262,12 +266,10 @@ export const OptionsApp: React.FC = () => {
               <h3>Language Directions</h3>
               <div className="input-field">
                 <label>Native Language</label>
-                <p className="description">The primary language you speak.</p>
                 <select value={nativeLang} onChange={(e) => setNativeLang(e.target.value)}>{langOptions}</select>
               </div>
               <div className="input-field">
                 <label>Learning Language</label>
-                <p className="description">The language you are studying.</p>
                 <select value={learningLang} onChange={(e) => setLearningLang(e.target.value)}>{langOptions}</select>
               </div>
             </section>
@@ -294,14 +296,8 @@ export const OptionsApp: React.FC = () => {
             </div>
             {ttsEngine === 'azure' && (
               <div className="azure-config-panel">
-                <div className="input-field">
-                  <label>API Key</label>
-                  <input type="password" value={azureKey} onChange={(e) => setAzureKey(e.target.value)} placeholder="Azure Speech Key" />
-                </div>
-                <div className="input-field">
-                  <label>Region</label>
-                  <input type="text" value={azureRegion} onChange={(e) => setAzureRegion(e.target.value)} placeholder="e.g. westeurope" />
-                </div>
+                <div className="input-field"><label>API Key</label><input type="password" value={azureKey} onChange={(e) => setAzureKey(e.target.value)} /></div>
+                <div className="input-field"><label>Region</label><input type="text" value={azureRegion} onChange={(e) => setAzureRegion(e.target.value)} /></div>
                 <button className="secondary-btn" onClick={handleTestAzure}>Test Connection</button>
               </div>
             )}
@@ -311,32 +307,16 @@ export const OptionsApp: React.FC = () => {
         return (
           <section className="setting-group">
             <h3>Voice Personalization</h3>
-            <div className="test-panel">
-              <label>Test Phrase</label>
-              <textarea value={testText} onChange={(e) => setVoiceTestText(e.target.value)} rows={3} />
-            </div>
-            <div className="voice-grid">
-              <VoiceSelector lang={nativeLang} />
-              <VoiceSelector lang={learningLang} />
-            </div>
+            <div className="test-panel"><label>Test Phrase</label><textarea value={testText} onChange={(e) => setVoiceTestText(e.target.value)} rows={3} /></div>
+            <div className="voice-grid"><VoiceSelector lang={nativeLang} /><VoiceSelector lang={learningLang} /></div>
           </section>
         );
       case 'theme':
         return (
           <section className="setting-group">
             <h3>Visual Style</h3>
-            <div className="input-field">
-              <label>Theme Mode</label>
-              <select value={theme} onChange={(e) => setTheme(e.target.value as any)}>
-                <option value="system">Follow System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </div>
-            <div className="input-field">
-              <label>UI Scale ({uiScale.toFixed(1)}x)</label>
-              <input type="range" min="0.8" max="1.5" step="0.1" value={uiScale} onChange={(e) => setUiScale(parseFloat(e.target.value))} />
-            </div>
+            <div className="input-field"><label>Theme Mode</label><select value={theme} onChange={(e) => setTheme(e.target.value as any)}><option value="system">Follow System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+            <div className="input-field"><label>UI Scale ({uiScale.toFixed(1)}x)</label><input type="range" min="0.8" max="1.5" step="0.1" value={uiScale} onChange={(e) => setUiScale(parseFloat(e.target.value))} /></div>
           </section>
         );
       case 'hotkeys':
@@ -347,9 +327,7 @@ export const OptionsApp: React.FC = () => {
               {Object.entries(hotkeys).map(([action, code]) => (
                 <div key={action} className="hotkey-item">
                   <span className="hotkey-label">{action.replace('_', ' ')}</span>
-                  <button className={`hotkey-record-btn ${recordingKey === action ? 'recording' : ''}`} onClick={() => setRecordingKey(action)}>
-                    {recordingKey === action ? 'Press key...' : code || 'None'}
-                  </button>
+                  <button className={`hotkey-record-btn ${recordingKey === action ? 'recording' : ''}`} onClick={() => setRecordingKey(action)}>{recordingKey === action ? 'Press key...' : code || 'None'}</button>
                 </div>
               ))}
             </div>
@@ -363,10 +341,7 @@ export const OptionsApp: React.FC = () => {
     <div className="app-layout">
       <div className="app-container">
         <aside className="sidebar">
-          <div className="sidebar-header">
-            <span className="logo">🌐</span>
-            <h2>Settings</h2>
-          </div>
+          <div className="sidebar-header"><span className="logo">🌐</span><h2>Settings</h2></div>
           <nav className="nav-menu">
             <button className={activeTab === 'general' ? 'active' : ''} onClick={() => setActiveTab('general')}>General</button>
             <button className={activeTab === 'engine' ? 'active' : ''} onClick={() => setActiveTab('engine')}>TTS Engine</button>
@@ -374,105 +349,46 @@ export const OptionsApp: React.FC = () => {
             <button className={activeTab === 'theme' ? 'active' : ''} onClick={() => setActiveTab('theme')}>Theme & Scale</button>
             <button className={activeTab === 'hotkeys' ? 'active' : ''} onClick={() => setActiveTab('hotkeys')}>Hotkeys</button>
           </nav>
-          <div className="sidebar-footer">
-            <button className="clear-cache-link" onClick={handleClearCache}>Clear All Cache</button>
-          </div>
+          <div className="sidebar-footer"><button className="clear-cache-link" onClick={() => { if(confirm('Clear cache?')) chrome.runtime.sendMessage({type:'CLEAR_CACHE'},()=>setStatus('Cleared')); }}>Clear All Cache</button></div>
         </aside>
-
         <main className="main-content">
-          <header className="content-header">
-            <h1>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
-            <button className="save-top-btn" onClick={handleSave}>Save Changes</button>
-          </header>
+          <header className="content-header"><h1>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1><button className="save-top-btn" onClick={handleSave}>Save Changes</button></header>
           <div className="tab-body">{renderContent()}</div>
           {status && <div className="floating-status">{status}</div>}
         </main>
       </div>
-
       <style>{`
-        :root {
-          --primary: #3498db; --bg: #f8f9fa; --sidebar-bg: #ffffff; --card: #ffffff;
-          --text: #2c3e50; --text-dim: #7f8c8d; --border: #e0e6ed; --input-bg: #ffffff;
-        }
-        [data-theme='dark'] {
-          --bg: #121212; --sidebar-bg: #1e1e1e; --card: #252525;
-          --text: #e0e0e0; --text-dim: #a0a0a0; --border: #333333; --input-bg: #2d2d2d;
-        }
-        body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
-        .app-layout {
-          display: flex;
-          justify-content: center;
-          min-height: 100vh;
-        }
-        .app-container {
-          display: flex;
-          width: 100%;
-          max-width: 1100px;
-          background: var(--sidebar-bg);
-          box-shadow: 0 0 30px rgba(0,0,0,0.05);
-        }
-        
-        .sidebar { 
-          width: 240px; 
-          background: var(--sidebar-bg); 
-          border-right: 1px solid var(--border); 
-          display: flex; 
-          flex-direction: column; 
-          padding: 20px 0;
-          flex-shrink: 0;
-        }
+        :root { --primary: #3498db; --bg: #f8f9fa; --sidebar-bg: #ffffff; --text: #2c3e50; --text-dim: #7f8c8d; --border: #e0e6ed; --input-bg: #ffffff; }
+        [data-theme='dark'] { --bg: #121212; --sidebar-bg: #1e1e1e; --text: #e0e0e0; --text-dim: #a0a0a0; --border: #333333; --input-bg: #2d2d2d; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        .app-layout { display: flex; justify-content: center; min-height: 100vh; }
+        .app-container { display: flex; width: 100%; max-width: 1100px; background: var(--sidebar-bg); box-shadow: 0 0 30px rgba(0,0,0,0.05); }
+        .sidebar { width: 240px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 0; flex-shrink: 0; }
         .sidebar-header { padding: 0 24px 20px; display: flex; align-items: center; gap: 12px; }
-        .sidebar-header .logo { font-size: 24px; }
-        .sidebar-header h2 { font-size: 18px; margin: 0; }
-        
         .nav-menu { flex: 1; display: flex; flex-direction: column; }
-        .nav-menu button { background: none; border: none; padding: 12px 24px; text-align: left; font-size: 15px; color: var(--text-dim); cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; }
-        .nav-menu button:hover { background: rgba(0,0,0,0.03); color: var(--text); }
+        .nav-menu button { background: none; border: none; padding: 12px 24px; text-align: left; font-size: 15px; color: var(--text-dim); cursor: pointer; border-left: 3px solid transparent; }
         .nav-menu button.active { background: rgba(52, 152, 219, 0.1); color: var(--primary); border-left-color: var(--primary); font-weight: 600; }
-        
-        .sidebar-footer { padding: 20px 24px; }
-        .clear-cache-link { background: none; border: none; color: #e74c3c; font-size: 13px; cursor: pointer; padding: 0; opacity: 0.8; }
-        .clear-cache-link:hover { text-decoration: underline; opacity: 1; }
-
         .main-content { flex: 1; padding: 40px 60px; position: relative; max-width: 800px; }
         .content-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .content-header h1 { margin: 0; font-size: 28px; }
         .save-top-btn { background: var(--primary); color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; }
-        
-        .setting-group { margin-bottom: 40px; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .setting-group { margin-bottom: 40px; }
         .setting-group h3 { font-size: 14px; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 20px; }
-        
         .input-field { margin-bottom: 20px; }
         .input-field label { display: block; font-weight: 600; margin-bottom: 4px; }
-        .description { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
-        select, input[type="text"], input[type="password"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); outline: none; }
-        
+        select, input, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); outline: none; }
         .engine-selector { display: flex; gap: 12px; margin-bottom: 20px; }
-        .engine-btn { flex: 1; padding: 15px; background: var(--input-bg); border: 2px solid var(--border); border-radius: 10px; cursor: pointer; color: var(--text-dim); font-weight: 600; transition: all 0.2s; }
+        .engine-btn { flex: 1; padding: 15px; background: var(--input-bg); border: 2px solid var(--border); border-radius: 10px; cursor: pointer; color: var(--text-dim); font-weight: 600; }
         .engine-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(52, 152, 219, 0.05); }
-        
         .azure-config-panel { padding: 20px; background: rgba(0,0,0,0.02); border-radius: 10px; border: 1px dashed var(--border); }
-        .secondary-btn { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
-        
-        .test-panel { margin-bottom: 30px; }
-        .test-panel textarea { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); resize: none; }
         .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .voice-selector-box { padding: 20px; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 10px; }
-        .voice-selector-box h4 { margin: 0 0 15px 0; font-size: 16px; }
-        .input-field.mini { margin-bottom: 12px; }
-        .input-field.mini label { font-size: 12px; color: var(--text-dim); }
-        .test-voice-btn { width: 100%; margin-top: 10px; background: rgba(52, 152, 219, 0.1); border: 1px solid var(--primary); color: var(--primary); padding: 8px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
-        .test-voice-btn:hover { background: var(--primary); color: white; }
-
+        .gender-toggle { display: flex; gap: 1px; background: var(--border); border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+        .gender-toggle button { flex: 1; border: none; padding: 6px; background: var(--input-bg); color: var(--text-dim); cursor: pointer; font-size: 12px; font-weight: 600; }
+        .gender-toggle button.active { background: var(--primary); color: white; }
+        .test-voice-btn { width: 100%; margin-top: 10px; background: rgba(52, 152, 219, 0.1); border: 1px solid var(--primary); color: var(--primary); padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600; }
         .hotkey-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .hotkey-item { display: flex; flex-direction: column; gap: 5px; }
-        .hotkey-label { font-size: 12px; color: var(--text-dim); text-transform: capitalize; }
-        .hotkey-record-btn { padding: 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text); font-family: monospace; }
         .hotkey-record-btn.recording { background: var(--primary); color: white; animation: pulse 1.5s infinite; }
-
-        .floating-status { position: fixed; bottom: 30px; right: 30px; background: #27ae60; color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); font-weight: 600; animation: slideIn 0.3s ease; z-index: 1000; }
-        @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .floating-status { position: fixed; bottom: 30px; right: 30px; background: #27ae60; color: white; padding: 12px 24px; border-radius: 8px; font-weight: 600; z-index: 1000; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
       `}</style>
     </div>

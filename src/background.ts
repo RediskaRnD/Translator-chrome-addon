@@ -18,6 +18,7 @@ chrome.runtime.onInstalled.addListener(() => {
       "autoPlayback",
       "preferredVoices",
       "preferredAccents",
+      "preferredGenders",
       "autoPlaybackLimit",
       "hotkeys",
     ],
@@ -31,6 +32,7 @@ chrome.runtime.onInstalled.addListener(() => {
       if (!result.autoPlayback) defaults.autoPlayback = DEFAULT_SETTINGS.AUTO_PLAYBACK;
       if (result.autoPlaybackLimit === undefined) defaults.autoPlaybackLimit = DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
       if (!result.preferredVoices) defaults.preferredVoices = {};
+      if (!result.preferredGenders) defaults.preferredGenders = {};
       if (!result.hotkeys) defaults.hotkeys = DEFAULT_HOTKEYS;
       if (!result.preferredAccents) {
         defaults.preferredAccents = {
@@ -62,8 +64,8 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
   }
 
   if (message.type === "SPEAK") {
-    const { text, langCode, bypassCache } = message.payload;
-    handleSpeak(text, langCode, !!bypassCache);
+    const { text, langCode, bypassCache, options } = message.payload;
+    handleSpeak(text, langCode, !!bypassCache, options);
     sendResponse({ success: true, version: VERSION });
     return false;
   }
@@ -86,64 +88,45 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 });
 
 async function handleStopAudio() {
-  console.log("Background: handleStopAudio called. ID before increment:", currentSpeechId);
-  currentSpeechId++; // Cancel any pending handleSpeak operations
-  console.log("Background: ID after increment:", currentSpeechId);
+  currentSpeechId++;
   chrome.tts.stop();
-  
-  // Nuclear option: Close the offscreen document to force-stop all HTML5 Audio
   try {
     const OFFSCREEN_PATH = "src/offscreen/offscreen.html";
     const existingContexts = await (chrome.runtime as any).getContexts({
       contextTypes: ["OFFSCREEN_DOCUMENT"],
       documentUrls: [chrome.runtime.getURL(OFFSCREEN_PATH)],
     });
-
-    console.log("Background: Existing offscreen contexts:", existingContexts.length);
     if (existingContexts.length > 0) {
       await chrome.offscreen.closeDocument();
-      console.log("Background: chrome.offscreen.closeDocument() executed");
     }
-  } catch (e) {
-    console.error("Background: Error closing offscreen document:", e);
-  }
+  } catch (e) {}
 }
 
-async function handleSpeak(text: string, langCode: string, bypassCache: boolean = false) {
+async function handleSpeak(text: string, langCode: string, bypassCache: boolean = false, previewOptions?: any) {
   const mySpeechId = ++currentSpeechId;
-  console.log(`Background: handleSpeak start. Text: "${text}", Lang: ${langCode}, Bypass: ${bypassCache}, My ID: ${mySpeechId}`);
+  console.log(`Background: handleSpeak. Text: "${text}", Lang: ${langCode}, Preview: ${!!previewOptions}`);
   
   try {
-    const settings = await chrome.storage.local.get(["preferredVoices", "preferredAccents", "ttsEngine", "azureKey", "azureRegion"]) as {
-      preferredVoices?: Record<string, string>;
-      preferredAccents?: Record<string, string>;
-      ttsEngine?: 'google' | 'azure';
-      azureKey?: string;
-      azureRegion?: string;
-    };
+    const settings = await chrome.storage.local.get(["preferredVoices", "preferredAccents", "preferredGenders", "ttsEngine", "azureKey", "azureRegion"]) as any;
     if (mySpeechId !== currentSpeechId) return;
 
-    const engine = settings.ttsEngine || "google";
-    const preferredVoices = settings.preferredVoices || {};
-    const preferredAccents = settings.preferredAccents || {};
-    const azureKey = settings.azureKey || "";
-    const azureRegion = settings.azureRegion || "";
+    // Use preview options if provided (unsaved UI state), otherwise use stored settings
+    const engine = previewOptions?.ttsEngine || settings.ttsEngine || "google";
+    const preferredVoices = previewOptions?.preferredVoices || settings.preferredVoices || {};
+    const preferredAccents = previewOptions?.preferredAccents || settings.preferredAccents || {};
+    const preferredGenders = previewOptions?.preferredGenders || settings.preferredGenders || {};
+    const azureKey = previewOptions?.azureKey || settings.azureKey || "";
+    const azureRegion = previewOptions?.azureRegion || settings.azureRegion || "";
 
-    // Determine exact accent to use
+    // Determine exact accent/locale to use
+    // If langCode is just 'en', we look up the preferred accent (e.g. 'en-US')
     let accentToUse = langCode;
     if (!langCode.includes('-')) {
-      const preferredAccent = preferredAccents[langCode];
-      if (preferredAccent) {
-        accentToUse = preferredAccent;
-      } else {
-        const defaultAccents = getAccentsForLanguage(langCode);
-        accentToUse = defaultAccents.length > 0 ? defaultAccents[0].code : langCode;
-      }
+      accentToUse = preferredAccents[langCode] || getAccentsForLanguage(langCode)[0]?.code || langCode;
     }
 
-    // Use selected engine
     if (engine === 'azure' && azureKey && azureRegion) {
-      await handleSpeakAzure(text, accentToUse, azureKey, azureRegion, mySpeechId, bypassCache);
+      await handleSpeakAzure(text, accentToUse, azureKey, azureRegion, mySpeechId, bypassCache, preferredVoices, preferredGenders);
     } else {
       await handleSpeakGoogle(text, accentToUse, preferredVoices, mySpeechId, bypassCache);
     }
@@ -152,25 +135,31 @@ async function handleSpeak(text: string, langCode: string, bypassCache: boolean 
   }
 }
 
-async function handleSpeakAzure(text: string, accentCode: string, key: string, region: string, mySpeechId: number, bypassCache: boolean) {
+async function handleSpeakAzure(
+  text: string, 
+  accentCode: string, 
+  key: string, 
+  region: string, 
+  mySpeechId: number, 
+  bypassCache: boolean,
+  preferredVoices: Record<string, string>,
+  preferredGenders: Record<string, 'Male' | 'Female'>
+) {
   try {
     const cacheKey = `audio_azure_${accentCode}_${text.toLowerCase().trim()}`;
-    const settings = await chrome.storage.local.get([cacheKey, "preferredVoices", "azureVoicesCache"]);
+    const settings = await chrome.storage.local.get([cacheKey, "azureVoicesCache"]);
     if (mySpeechId !== currentSpeechId) return;
 
     if (!bypassCache && settings[cacheKey]) {
-      console.log(`Background [Azure]: Using cached audio for ${accentCode}`);
       await playAudio(settings[cacheKey] as string, mySpeechId);
       return;
     }
 
-    const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
     const baseLang = accentCode.split('-')[0];
+    const targetGender = preferredGenders[baseLang] || 'Female';
     
-    // 1. Fetch/Use voices list to find best neural match
     let voices = settings.azureVoicesCache as any[] | undefined;
     if (!voices || !Array.isArray(voices)) {
-      console.log(`Background [Azure]: Fetching voices list from Azure...`);
       const voicesUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
       const voicesRes = await fetch(voicesUrl, { headers: { 'Ocp-Apim-Subscription-Key': key } });
       if (voicesRes.ok) {
@@ -179,27 +168,23 @@ async function handleSpeakAzure(text: string, accentCode: string, key: string, r
       }
     }
 
-    // 2. Determine voice name
+    // IMPORTANT FIX: Azure keys in preferredVoices now use the full accentCode (e.g. 'en-US')
     let selectedVoiceShortName = preferredVoices[accentCode] || preferredVoices[baseLang];
-    
-    // VALIDATION: Ensure the preferred voice name is actually an Azure voice (usually 3 segments, e.g. ru-RU-SvetlanaNeural)
-    // If it looks like a system voice name (e.g. "Google русский"), ignore it and find a real Azure voice.
     const isValidAzureName = selectedVoiceShortName && selectedVoiceShortName.split('-').length >= 3;
 
     if (!isValidAzureName && voices && Array.isArray(voices)) {
-      console.log(`Background [Azure]: Preferred voice is missing or invalid, finding best neural match...`);
-      const bestVoice = voices.find((v: any) => v.Locale.toLowerCase() === accentCode.toLowerCase() && v.ShortName.includes('Neural')) 
-                     || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()) && v.ShortName.includes('Neural'))
-                     || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()))
-                     || { ShortName: 'en-US-AvaNeural' };
+      console.log(`Background [Azure]: Finding best match for ${accentCode} (${targetGender})`);
+      const bestVoice = voices.find((v: any) => v.Locale === accentCode && v.Gender === targetGender && v.ShortName.includes('Neural'))
+                   || voices.find((v: any) => v.Locale === accentCode && v.Gender === targetGender)
+                   || voices.find((v: any) => v.Locale === accentCode && v.ShortName.includes('Neural'))
+                   || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.Gender === targetGender && v.ShortName.includes('Neural'))
+                   || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.ShortName.includes('Neural'))
+                   || { ShortName: 'en-US-AvaNeural' };
       selectedVoiceShortName = bestVoice.ShortName;
-    } else if (!selectedVoiceShortName) {
-      selectedVoiceShortName = 'en-US-AvaNeural';
     }
 
-    console.log(`Background [Azure]: Final voice choice: ${selectedVoiceShortName}`);
+    console.log(`Background [Azure]: Using voice ${selectedVoiceShortName} for accent ${accentCode}`);
 
-    // 3. Synthesize
     const ttsUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
     const ssml = `<speak version='1.0' xml:lang='${accentCode}'><voice xml:lang='${accentCode}' name='${selectedVoiceShortName}'>${text}</voice></speak>`;
     
@@ -214,33 +199,24 @@ async function handleSpeakAzure(text: string, accentCode: string, key: string, r
     });
 
     if (!response.ok) throw new Error(`Azure TTS error: ${response.status}`);
-
     const arrayBuffer = await response.arrayBuffer();
     if (mySpeechId !== currentSpeechId) return;
 
     const base64data = `data:audio/mpeg;base64,${arrayBufferToBase64(arrayBuffer)}`;
-    
-    // Save to cache (with weighted scoring in future phase)
-    await chrome.storage.local.set({ [cacheKey]: base64data });
-    
+    if (!bypassCache) await chrome.storage.local.set({ [cacheKey]: base64data });
     await playAudio(base64data, mySpeechId);
   } catch (e) {
-    console.warn("Background [Azure]: Failed, falling back to Google", e);
-    // Fallback logic could be complex, for now we just try handleSpeakGoogle
-    // with empty preferences to ensure it works.
+    console.warn("Background [Azure]: Failed, fallback to Google", e);
     await handleSpeakGoogle(text, accentCode, {}, mySpeechId, bypassCache);
   }
 }
 
 async function handleSpeakGoogle(text: string, accentCode: string, preferredVoices: Record<string, string>, mySpeechId: number, bypassCache: boolean) {
+  // Google preferred voices can be accent-specific or base-lang specific
   const preferredVoiceName = preferredVoices[accentCode] || preferredVoices[accentCode.split('-')[0]];
 
-  if (preferredVoiceName) {
-    console.log(`Background [Google]: Using chrome.tts.speak with voice: ${preferredVoiceName}`);
-    chrome.tts.speak(text, {
-      voiceName: preferredVoiceName,
-      lang: accentCode,
-    });
+  if (preferredVoiceName && !preferredVoiceName.includes('-')) {
+    chrome.tts.speak(text, { voiceName: preferredVoiceName, lang: accentCode });
     return;
   }
 
@@ -249,12 +225,10 @@ async function handleSpeakGoogle(text: string, accentCode: string, preferredVoic
   if (mySpeechId !== currentSpeechId) return;
 
   if (!bypassCache && cached[cacheKey]) {
-    console.log(`Background [Google]: Using cached audio`);
     await playAudio(cached[cacheKey] as string, mySpeechId);
     return;
   }
 
-  console.log(`Background [Google]: Fetching from Google TTS...`);
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${accentCode.toLowerCase()}&client=tw-ob&q=${encodeURIComponent(text)}`;
   const response = await fetch(url);
   if (mySpeechId !== currentSpeechId) return;
@@ -263,16 +237,16 @@ async function handleSpeakGoogle(text: string, accentCode: string, preferredVoic
   if (mySpeechId !== currentSpeechId) return;
 
   const base64data = `data:audio/mpeg;base64,${arrayBufferToBase64(arrayBuffer)}`;
-
-  try {
-    await chrome.storage.local.set({ [cacheKey]: base64data });
-  } catch (e: any) {
-    if (e.message?.includes('quota')) {
-      await CacheManager.clearAudioCache();
+  if (!bypassCache) {
+    try {
       await chrome.storage.local.set({ [cacheKey]: base64data });
+    } catch (e: any) {
+      if (e.message?.includes('quota')) {
+        await CacheManager.clearAudioCache();
+        await chrome.storage.local.set({ [cacheKey]: base64data });
+      }
     }
   }
-  
   await playAudio(base64data, mySpeechId);
 }
 
@@ -286,35 +260,22 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 async function playAudio(dataUrl: string, mySpeechId?: number) {
-  if (mySpeechId !== undefined && mySpeechId !== currentSpeechId) {
-    console.log(`Background: playAudio aborted before start (My ID: ${mySpeechId}, Current: ${currentSpeechId})`);
-    return;
-  }
-
+  if (mySpeechId !== undefined && mySpeechId !== currentSpeechId) return;
   const OFFSCREEN_PATH = "src/offscreen/offscreen.html";
   try {
     const existingContexts = await (chrome.runtime as any).getContexts({
       contextTypes: ["OFFSCREEN_DOCUMENT"],
       documentUrls: [chrome.runtime.getURL(OFFSCREEN_PATH)],
     });
-
     if (existingContexts.length === 0) {
-      console.log("Background: Creating offscreen document...");
       await chrome.offscreen.createDocument({
         url: OFFSCREEN_PATH,
         reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
         justification: "Playing pronunciation",
       });
-      console.log("Background: Offscreen document created.");
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
-
-    if (mySpeechId !== undefined && mySpeechId !== currentSpeechId) {
-      console.log(`Background: playAudio aborted after document check (My ID: ${mySpeechId}, Current: ${currentSpeechId})`);
-      return;
-    }
-
-    console.log("Background: Sending PLAY_AUDIO to offscreen.");
+    if (mySpeechId !== undefined && mySpeechId !== currentSpeechId) return;
     chrome.runtime.sendMessage({ type: "PLAY_AUDIO", url: dataUrl });
   } catch (e) {
     console.error("Offscreen Document Error:", e);
@@ -324,13 +285,8 @@ async function playAudio(dataUrl: string, mySpeechId?: number) {
 async function handleTranslation(text: string, from: string, to: string) {
   const cached = await CacheManager.getTranslation(text, from, to);
   if (cached) {
-    // Refresh history position
     await CacheManager.addToHistory(text, from, to, cached);
-    try {
-      return JSON.parse(cached);
-    } catch (e) {
-      return { translatedText: cached, alternatives: [] };
-    }
+    try { return JSON.parse(cached); } catch (e) { return { translatedText: cached, alternatives: [] }; }
   }
   const result = await translate(text, from, to);
   if (result.translatedText && !result.translatedText.startsWith("Error")) {
@@ -345,22 +301,15 @@ async function translate(text: string, from: string, to: string) {
     const response = await fetch(url);
     const data = await response.json();
     const mainTranslation = data[0].map((item: any) => item[0]).join("");
-
-    // Group alternatives by parts of speech
     const dictionary: { pos: string; terms: string[] }[] = [];
     if (data[1]) {
       data[1].forEach((item: any) => {
-        const pos = item[0]; // Part of speech (e.g., "noun", "verb")
-        const terms = item[1]; // Array of translations
+        const pos = item[0];
+        const terms = item[1];
         dictionary.push({ pos, terms });
       });
     }
-
-    return {
-      translatedText: mainTranslation,
-      dictionary: dictionary,
-      detectedLanguage: data[2],
-    };
+    return { translatedText: mainTranslation, dictionary: dictionary, detectedLanguage: data[2] };
   } catch (error) {
     return { translatedText: "Error", dictionary: [] };
   }
