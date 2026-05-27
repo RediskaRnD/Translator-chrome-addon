@@ -6,6 +6,9 @@ export const DEFAULT_SETTINGS = {
   THEME: 'system' as const,
   AUTO_PLAYBACK: 'off' as const,
   AUTO_PLAYBACK_LIMIT: 100,
+  TTS_ENGINE: 'google' as const,
+  AZURE_KEY: '',
+  AZURE_REGION: 'westeurope',
 };
 
 export const DEFAULT_HOTKEYS = {

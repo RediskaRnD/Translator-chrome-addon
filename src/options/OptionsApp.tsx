@@ -19,8 +19,17 @@ export const OptionsApp: React.FC = () => {
   const [status, setStatus] = useState('');
   const [recordingKey, setRecordingKey] = useState<string | null>(null);
 
+  // Azure settings
+  const [ttsEngine, setTtsEngine] = useState<'google' | 'azure'>(DEFAULT_SETTINGS.TTS_ENGINE);
+  const [azureKey, setAzureKey] = useState(DEFAULT_SETTINGS.AZURE_KEY);
+  const [azureRegion, setAzureRegion] = useState(DEFAULT_SETTINGS.AZURE_REGION);
+
   useEffect(() => {
-    chrome.storage.local.get(['nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit', 'hotkeys'], (settings) => {
+    chrome.storage.local.get([
+      'nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 
+      'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit', 
+      'hotkeys', 'ttsEngine', 'azureKey', 'azureRegion'
+    ], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.preferredVoices) setPreferredVoices(settings.preferredVoices as Record<string, string>);
@@ -31,6 +40,9 @@ export const OptionsApp: React.FC = () => {
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
       if (settings.autoPlaybackLimit !== undefined) setAutoPlaybackLimit(settings.autoPlaybackLimit as number);
       if (settings.hotkeys) setHotkeys(settings.hotkeys as Record<string, string>);
+      if (settings.ttsEngine) setTtsEngine(settings.ttsEngine as 'google' | 'azure');
+      if (settings.azureKey) setAzureKey(settings.azureKey as string);
+      if (settings.azureRegion) setAzureRegion(settings.azureRegion as string);
     });
 
     chrome.tts.getVoices((v) => {
@@ -81,11 +93,39 @@ export const OptionsApp: React.FC = () => {
       theme,
       autoPlayback,
       autoPlaybackLimit,
-      hotkeys
+      hotkeys,
+      ttsEngine,
+      azureKey,
+      azureRegion
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
     });
+  };
+
+  const handleTestAzure = async () => {
+    if (!azureKey || !azureRegion) {
+      setStatus('Please enter Azure Key and Region first');
+      return;
+    }
+    setStatus('Testing Azure connection...');
+    try {
+      const url = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
+      const response = await fetch(url, {
+        headers: { 'Ocp-Apim-Subscription-Key': azureKey }
+      });
+      if (response.ok) {
+        const voices = await response.json();
+        setStatus(`Success! Found ${voices.length} Azure voices.`);
+      } else {
+        setStatus(`Azure Error: ${response.status} ${response.statusText}`);
+      }
+    } catch (e: any) {
+      console.error('Azure Test Error:', e);
+      setStatus(`Connection Failed: ${e.message || 'Unknown error'}`);
+    }
+    // Don't auto-clear success/error messages too quickly so user can see them
+    setTimeout(() => setStatus(''), 8000);
   };
 
   const handleClearCache = () => {
@@ -164,6 +204,51 @@ export const OptionsApp: React.FC = () => {
         </header>
 
         <main className="card-body">
+          <section className="setting-group">
+            <h3>TTS Engine</h3>
+            <p className="description">Choose your preferred Text-to-Speech service.</p>
+            <div className="engine-selector">
+              <button 
+                className={`engine-btn ${ttsEngine === 'google' ? 'active' : ''}`}
+                onClick={() => setTtsEngine('google')}
+              >
+                Google (Default)
+              </button>
+              <button 
+                className={`engine-btn ${ttsEngine === 'azure' ? 'active' : ''}`}
+                onClick={() => setTtsEngine('azure')}
+              >
+                Azure AI Speech
+              </button>
+            </div>
+
+            {ttsEngine === 'azure' && (
+              <div className="azure-settings">
+                <div className="input-field">
+                  <label>Azure API Key</label>
+                  <input 
+                    type="password" 
+                    value={azureKey} 
+                    onChange={(e) => setAzureKey(e.target.value)}
+                    placeholder="Enter your Azure Speech key"
+                  />
+                </div>
+                <div className="input-field">
+                  <label>Azure Region</label>
+                  <input 
+                    type="text" 
+                    value={azureRegion} 
+                    onChange={(e) => setAzureRegion(e.target.value)}
+                    placeholder="e.g. westeurope"
+                  />
+                </div>
+                <button className="test-btn" onClick={handleTestAzure}>
+                  Test Azure Connection
+                </button>
+              </div>
+            )}
+          </section>
+
           <section className="setting-group">
             <h3>Languages</h3>
             <div className="input-field">
@@ -485,6 +570,52 @@ export const OptionsApp: React.FC = () => {
           border-color: var(--primary-color);
           animation: pulse 1.5s infinite;
         }
+
+        .engine-selector {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+        .engine-btn {
+          flex: 1;
+          padding: 10px;
+          background: var(--input-bg);
+          border: 2px solid var(--border-color);
+          border-radius: 8px;
+          cursor: pointer;
+          color: var(--text-secondary);
+          font-weight: 600;
+          transition: all 0.2s;
+        }
+        .engine-btn.active {
+          border-color: var(--primary-color);
+          color: var(--primary-color);
+          background: rgba(52, 152, 219, 0.1);
+        }
+        .azure-settings {
+          padding: 15px;
+          background: rgba(0,0,0,0.02);
+          border-radius: 8px;
+          border: 1px dashed var(--border-color);
+          margin-top: 10px;
+        }
+        .test-btn {
+          width: 100%;
+          padding: 8px;
+          background: transparent;
+          border: 1px solid var(--primary-color);
+          color: var(--primary-color);
+          border-radius: 6px;
+          cursor: pointer;
+          font-weight: 600;
+          transition: all 0.2s;
+          margin-top: 10px;
+        }
+        .test-btn:hover {
+          background: var(--primary-color);
+          color: white;
+        }
+
         @keyframes pulse {
           0% { opacity: 1; }
           50% { opacity: 0.7; }
