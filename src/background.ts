@@ -155,11 +155,12 @@ async function handleSpeak(text: string, langCode: string) {
 async function handleSpeakAzure(text: string, accentCode: string, key: string, region: string, mySpeechId: number) {
   try {
     const cacheKey = `audio_azure_${accentCode}_${text.toLowerCase().trim()}`;
-    const settings = await chrome.storage.local.get(["preferredVoices", "azureVoicesCache"]);
+    // FIX: Must request cacheKey in the get() call
+    const settings = await chrome.storage.local.get([cacheKey, "preferredVoices", "azureVoicesCache"]);
     if (mySpeechId !== currentSpeechId) return;
 
     if (settings[cacheKey]) {
-      console.log(`Background [Azure]: Using cached audio`);
+      console.log(`Background [Azure]: Using cached audio for ${accentCode}`);
       await playAudio(settings[cacheKey] as string, mySpeechId);
       return;
     }
@@ -167,34 +168,37 @@ async function handleSpeakAzure(text: string, accentCode: string, key: string, r
     const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
     const baseLang = accentCode.split('-')[0];
     
-    // 1. Priority: User selected a specific voice in Options for this accent or base language
-    let selectedVoiceShortName = preferredVoices[accentCode] || preferredVoices[baseLang];
-
-    if (!selectedVoiceShortName) {
-      console.log(`Background [Azure]: No preferred voice, finding best match...`);
-      // 2. Fetch/Use voices list to find best neural match
-      let voices = settings.azureVoicesCache as any[] | undefined;
-      if (!voices || !Array.isArray(voices)) {
-        const voicesUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
-        const voicesRes = await fetch(voicesUrl, { headers: { 'Ocp-Apim-Subscription-Key': key } });
-        if (voicesRes.ok) {
-          voices = await voicesRes.json();
-          chrome.storage.local.set({ azureVoicesCache: voices }); // Cache for subsequent calls
-        }
-      }
-
-      if (voices && Array.isArray(voices)) {
-        const bestVoice = voices.find((v: any) => v.Locale.toLowerCase() === accentCode.toLowerCase() && v.ShortName.includes('Neural')) 
-                       || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()) && v.ShortName.includes('Neural'))
-                       || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()))
-                       || { ShortName: 'en-US-AvaNeural' };
-        selectedVoiceShortName = bestVoice.ShortName;
-      } else {
-        selectedVoiceShortName = 'en-US-AvaNeural';
+    // 1. Fetch/Use voices list to find best neural match
+    let voices = settings.azureVoicesCache as any[] | undefined;
+    if (!voices || !Array.isArray(voices)) {
+      console.log(`Background [Azure]: Fetching voices list from Azure...`);
+      const voicesUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
+      const voicesRes = await fetch(voicesUrl, { headers: { 'Ocp-Apim-Subscription-Key': key } });
+      if (voicesRes.ok) {
+        voices = await voicesRes.json();
+        chrome.storage.local.set({ azureVoicesCache: voices });
       }
     }
 
-    console.log(`Background [Azure]: Using voice: ${selectedVoiceShortName}`);
+    // 2. Determine voice name
+    let selectedVoiceShortName = preferredVoices[accentCode] || preferredVoices[baseLang];
+    
+    // VALIDATION: Ensure the preferred voice name is actually an Azure voice (usually 3 segments, e.g. ru-RU-SvetlanaNeural)
+    // If it looks like a system voice name (e.g. "Google русский"), ignore it and find a real Azure voice.
+    const isValidAzureName = selectedVoiceShortName && selectedVoiceShortName.split('-').length >= 3;
+
+    if (!isValidAzureName && voices && Array.isArray(voices)) {
+      console.log(`Background [Azure]: Preferred voice is missing or invalid, finding best neural match...`);
+      const bestVoice = voices.find((v: any) => v.Locale.toLowerCase() === accentCode.toLowerCase() && v.ShortName.includes('Neural')) 
+                     || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()) && v.ShortName.includes('Neural'))
+                     || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()))
+                     || { ShortName: 'en-US-AvaNeural' };
+      selectedVoiceShortName = bestVoice.ShortName;
+    } else if (!selectedVoiceShortName) {
+      selectedVoiceShortName = 'en-US-AvaNeural';
+    }
+
+    console.log(`Background [Azure]: Final voice choice: ${selectedVoiceShortName}`);
 
     // 3. Synthesize
     const ttsUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
