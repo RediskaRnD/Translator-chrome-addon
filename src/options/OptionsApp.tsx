@@ -23,6 +23,8 @@ export const OptionsApp: React.FC = () => {
   const [ttsEngine, setTtsEngine] = useState<'google' | 'azure'>(DEFAULT_SETTINGS.TTS_ENGINE);
   const [azureKey, setAzureKey] = useState(DEFAULT_SETTINGS.AZURE_KEY);
   const [azureRegion, setAzureRegion] = useState(DEFAULT_SETTINGS.AZURE_REGION);
+  const [azureVoices, setAzureVoices] = useState<any[]>([]);
+  const [isAzureLoading, setIsAzureLoading] = useState(false);
 
   useEffect(() => {
     chrome.storage.local.get([
@@ -49,6 +51,27 @@ export const OptionsApp: React.FC = () => {
       setVoices(v);
     });
   }, []);
+
+  useEffect(() => {
+    if (ttsEngine === 'azure' && azureKey && azureRegion) {
+      fetchAzureVoices();
+    }
+  }, [ttsEngine, azureKey, azureRegion]);
+
+  const fetchAzureVoices = async () => {
+    setIsAzureLoading(true);
+    try {
+      const url = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
+      const response = await fetch(url, { headers: { 'Ocp-Apim-Subscription-Key': azureKey } });
+      if (response.ok) {
+        const data = await response.json();
+        setAzureVoices(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch Azure voices:', e);
+    }
+    setIsAzureLoading(false);
+  };
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -149,8 +172,22 @@ export const OptionsApp: React.FC = () => {
     const accents = getAccentsForLanguage(lang);
     const selectedAccent = preferredAccents[lang] || (accents.length > 0 ? accents[0].code : lang);
     
-    // Filter voices by the selected accent if it exists, otherwise by the base lang
-    const filteredVoices = voices.filter(v => v.lang?.startsWith(selectedAccent.split('-')[0]));
+    // Determine which voices to show
+    let currentVoices: any[] = [];
+    if (ttsEngine === 'azure') {
+      currentVoices = azureVoices
+        .filter(v => v.Locale.toLowerCase().startsWith(selectedAccent.split('-')[0].toLowerCase()))
+        .sort((a, b) => {
+          // Put Neural voices first
+          const aNeural = a.ShortName.includes('Neural');
+          const bNeural = b.ShortName.includes('Neural');
+          if (aNeural && !bNeural) return -1;
+          if (!aNeural && bNeural) return 1;
+          return a.DisplayName.localeCompare(b.DisplayName);
+        });
+    } else {
+      currentVoices = voices.filter(v => v.lang?.startsWith(selectedAccent.split('-')[0]));
+    }
 
     return (
       <div className="voice-selector">
@@ -178,17 +215,28 @@ export const OptionsApp: React.FC = () => {
         )}
 
         <div className="voice-field">
-          <p className="description">Preferred Voice:</p>
+          <p className="description">
+            Preferred {ttsEngine === 'azure' ? 'Azure Neural' : 'System'} Voice:
+            {isAzureLoading && ttsEngine === 'azure' && <span style={{ marginLeft: '10px', fontSize: '11px', color: 'var(--primary-color)' }}>Loading...</span>}
+          </p>
           <select 
             value={preferredVoices[lang] || ''} 
             onChange={(e) => setPreferredVoices({ ...preferredVoices, [lang]: e.target.value })}
           >
-            <option value="">System Default</option>
-            {filteredVoices.map((voice) => (
-              <option key={voice.voiceName} value={voice.voiceName}>
-                {voice.voiceName} ({voice.lang})
-              </option>
-            ))}
+            <option value="">{ttsEngine === 'azure' ? '-- Select Azure Voice --' : 'System Default'}</option>
+            {ttsEngine === 'azure' ? (
+              currentVoices.map((voice) => (
+                <option key={voice.ShortName} value={voice.ShortName}>
+                  {voice.DisplayName} {voice.ShortName.includes('Neural') ? '(Neural)' : ''} [{voice.Locale}]
+                </option>
+              ))
+            ) : (
+              currentVoices.map((voice) => (
+                <option key={voice.voiceName} value={voice.voiceName}>
+                  {voice.voiceName} ({voice.lang})
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>

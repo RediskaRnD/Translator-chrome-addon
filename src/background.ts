@@ -155,35 +155,50 @@ async function handleSpeak(text: string, langCode: string) {
 async function handleSpeakAzure(text: string, accentCode: string, key: string, region: string, mySpeechId: number) {
   try {
     const cacheKey = `audio_azure_${accentCode}_${text.toLowerCase().trim()}`;
-    const cached = await chrome.storage.local.get(cacheKey);
+    const settings = await chrome.storage.local.get(["preferredVoices", "azureVoicesCache"]);
     if (mySpeechId !== currentSpeechId) return;
 
-    if (cached[cacheKey]) {
+    if (settings[cacheKey]) {
       console.log(`Background [Azure]: Using cached audio`);
-      await playAudio(cached[cacheKey] as string, mySpeechId);
+      await playAudio(settings[cacheKey] as string, mySpeechId);
       return;
     }
 
-    console.log(`Background [Azure]: Fetching from Azure...`, { accentCode, text });
+    const preferredVoices = (settings.preferredVoices || {}) as Record<string, string>;
+    const baseLang = accentCode.split('-')[0];
     
-    // 1. Get voice list to find the best neural voice for this accent
-    const voicesUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
-    const voicesRes = await fetch(voicesUrl, { headers: { 'Ocp-Apim-Subscription-Key': key } });
-    if (!voicesRes.ok) throw new Error(`Azure Voices API error: ${voicesRes.status}`);
-    
-    const voices = await voicesRes.json();
-    // Try to find a neural voice for this specific accent (e.g. en-GB), 
-    // or any voice for this language (e.g. en), defaulting to first found.
-    const bestVoice = voices.find((v: any) => v.Locale.toLowerCase() === accentCode.toLowerCase() && v.ShortName.includes('Neural')) 
-                   || voices.find((v: any) => v.Locale.toLowerCase().startsWith(accentCode.split('-')[0].toLowerCase()) && v.ShortName.includes('Neural'))
-                   || voices.find((v: any) => v.Locale.toLowerCase().startsWith(accentCode.split('-')[0].toLowerCase()))
-                   || { ShortName: 'en-US-AvaNeural' }; // Fallback
+    // 1. Priority: User selected a specific voice in Options for this accent or base language
+    let selectedVoiceShortName = preferredVoices[accentCode] || preferredVoices[baseLang];
 
-    console.log(`Background [Azure]: Selected voice: ${bestVoice.ShortName}`);
+    if (!selectedVoiceShortName) {
+      console.log(`Background [Azure]: No preferred voice, finding best match...`);
+      // 2. Fetch/Use voices list to find best neural match
+      let voices = settings.azureVoicesCache as any[] | undefined;
+      if (!voices || !Array.isArray(voices)) {
+        const voicesUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
+        const voicesRes = await fetch(voicesUrl, { headers: { 'Ocp-Apim-Subscription-Key': key } });
+        if (voicesRes.ok) {
+          voices = await voicesRes.json();
+          chrome.storage.local.set({ azureVoicesCache: voices }); // Cache for subsequent calls
+        }
+      }
 
-    // 2. Synthesize
+      if (voices && Array.isArray(voices)) {
+        const bestVoice = voices.find((v: any) => v.Locale.toLowerCase() === accentCode.toLowerCase() && v.ShortName.includes('Neural')) 
+                       || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()) && v.ShortName.includes('Neural'))
+                       || voices.find((v: any) => v.Locale.toLowerCase().startsWith(baseLang.toLowerCase()))
+                       || { ShortName: 'en-US-AvaNeural' };
+        selectedVoiceShortName = bestVoice.ShortName;
+      } else {
+        selectedVoiceShortName = 'en-US-AvaNeural';
+      }
+    }
+
+    console.log(`Background [Azure]: Using voice: ${selectedVoiceShortName}`);
+
+    // 3. Synthesize
     const ttsUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
-    const ssml = `<speak version='1.0' xml:lang='${accentCode}'><voice xml:lang='${accentCode}' name='${bestVoice.ShortName}'>${text}</voice></speak>`;
+    const ssml = `<speak version='1.0' xml:lang='${accentCode}'><voice xml:lang='${accentCode}' name='${selectedVoiceShortName}'>${text}</voice></speak>`;
     
     const response = await fetch(ttsUrl, {
       method: 'POST',
