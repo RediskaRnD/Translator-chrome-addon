@@ -195,7 +195,7 @@ export const OptionsApp: React.FC = () => {
       availableAzureLocales = Array.from(new Set(relevantVoices.map(v => v.Locale))).sort();
 
       currentVoices = relevantVoices
-        .filter(v => v.Locale === selectedAccent && v.Gender === selectedGender)
+        .filter(v => (v.Locale === selectedAccent || v.Locale.startsWith(selectedAccent + '-')) && v.Gender === selectedGender)
         .sort((a, b) => {
           const aNeural = a.ShortName.includes('Neural');
           const bNeural = b.ShortName.includes('Neural');

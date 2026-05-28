@@ -74,6 +74,12 @@ export const LANGUAGE_ACCENTS: Record<string, Accent[]> = {
   'cs': [{ code: 'cs-CZ', name: 'Czech', label: 'CZ' }],
   'sk': [{ code: 'sk-SK', name: 'Slovak', label: 'SK' }],
   'he': [{ code: 'he-IL', name: 'Hebrew', label: 'IL' }],
+  'lt': [{ code: 'lt-LT', name: 'Lithuanian', label: 'LT' }],
+  'lv': [{ code: 'lv-LV', name: 'Latvian', label: 'LV' }],
+  'et': [{ code: 'et-EE', name: 'Estonian', label: 'EE' }],
+  'bg': [{ code: 'bg-BG', name: 'Bulgarian', label: 'BG' }],
+  'hr': [{ code: 'hr-HR', name: 'Croatian', label: 'HR' }],
+  'sl': [{ code: 'sl-SI', name: 'Slovenian', label: 'SI' }],
 };
 
 export function getAccentsForLanguage(lang: string): Accent[] {
