@@ -45,6 +45,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [manualHeight, setManualHeight] = useState<number | null>(null);
   const [scale, setScale] = useState(DEFAULT_SETTINGS.UI_SCALE);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme || DEFAULT_SETTINGS.THEME);
+  const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
+  const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
@@ -59,6 +61,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [isInitialized, setIsInitialized] = useState(false);
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
   const isNavigatingHistory = React.useRef(false);
+  const isInternalChange = React.useRef(false);
 
   const currentFrom = from === 'auto' ? detectedFrom : from;
 
@@ -160,63 +163,55 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       (res) => {
         if (res && isContextValid()) {
           const textScript = getScript(text);
-          let detected = res.detectedLanguage || (textScript === 'latin' ? "en" : "ru");
+          let detected = res.detectedLanguage || (textScript === 'latin' ? learningLang : nativeLang);
           
           if (textScript && !isLanguageInScript(detected, textScript) && text.length < 30) {
-            const fallback = textScript === 'latin' ? 'en' : 'ru';
+            const fallback = textScript === 'latin' ? learningLang : nativeLang;
             console.log(`QT: Script mismatch detected. Text is ${textScript}, but API said ${detected}. Overriding to ${fallback}.`);
             detected = fallback;
           }
 
-          console.log('QT Translation Response:', { text, src, target, detected, translatedText: res.translatedText, textScript });
+          let finalFrom = src;
+          let finalTo = target;
 
-          chrome.storage.local.get(["nativeLang", "learningLang", "autoPlayback", "autoPlaybackLimit"], (settings) => {
-            if (!isContextValid()) return;
-            const native = (settings.nativeLang as string) || DEFAULT_SETTINGS.NATIVE_LANG;
-            const learning = (settings.learningLang as string) || DEFAULT_SETTINGS.LEARNING_LANG;
-            const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
-            const autoLimit = (settings.autoPlaybackLimit as number) !== undefined ? (settings.autoPlaybackLimit as number) : DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
-
-            let finalFrom = src;
-            let finalTo = target;
-
-            // Logic for swapping or updating languages
-            if (src === 'auto') {
-              setDetectedFrom(detected);
-              finalFrom = detected;
-              // If auto-detected the target, swap it to something else
-              if (detected === target) {
-                finalTo = (detected === native ? learning : native);
-                setTo(finalTo);
-              }
-            } else if (detected === target && src !== target) {
-
-              // User explicitly set En->Ru, but we detected Ru. Swap them.
-              console.log('QT: Detected target language in explicit mode, swapping...', { detected, target, src });
-              finalFrom = target;
-              finalTo = src;
-              setFrom(finalFrom);
+          // Logic for swapping or updating languages
+          if (src === 'auto') {
+            setDetectedFrom(detected);
+            finalFrom = detected;
+            // If auto-detected the target, swap it to something else
+            if (detected === target) {
+              finalTo = (detected === nativeLang ? learningLang : nativeLang);
               setTo(finalTo);
             }
+          } else if (detected === target && src !== target) {
+            // User explicitly set En->Ru, but we detected Ru. Swap them.
+            console.log('QT: Detected target language in explicit mode, swapping...', { detected, target, src });
+            finalFrom = target;
+            finalTo = src;
+            setFrom(finalFrom);
+            setTo(finalTo);
+          }
 
-            setTranslatedText(res.translatedText);
-            setDictionary(res.dictionary || []);
-            setHistoryIndex(0);
-            updateHistoryLength();
+          setTranslatedText(res.translatedText);
+          setDictionary(res.dictionary || []);
+          setHistoryIndex(0);
+          updateHistoryLength();
 
-            if (autoPlayMode !== 'off') {
-              const textToSpeak = autoPlayMode === 'from' ? text : res.translatedText;
-              const langToSpeak = autoPlayMode === 'from' ? finalFrom : finalTo;
-              console.log('QT: Triggering audio', { textToSpeak, langToSpeak, autoPlayMode });
+          if (autoPlayback !== 'off') {
+            const textToSpeak = autoPlayback === 'from' ? text : res.translatedText;
+            const langToSpeak = autoPlayback === 'from' ? finalFrom : finalTo;
+            
+            chrome.storage.local.get(["autoPlaybackLimit"], (settings) => {
+              const autoLimit = settings.autoPlaybackLimit ?? DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
               if (textToSpeak.length <= autoLimit) {
                 speak(textToSpeak, langToSpeak);
               }
-            }
-          });
+            });
+          }
         }
       }
     );
-  }, [updateHistoryLength]);
+  }, [updateHistoryLength, nativeLang, learningLang, autoPlayback]);
 
   // Listen for hotkeys
   useEffect(() => {
@@ -237,23 +232,28 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   useEffect(() => {
     if (!isContextValid()) return;
     const hostname = window.location.hostname;
-    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'hotkeys'], (settings) => {
+    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'learningLang', 'hotkeys'], (settings) => {
       if (!isContextValid()) return;
+      isInternalChange.current = true;
       if (settings.uiScale) setScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
       if (settings.hotkeys) setHotkeys(settings.hotkeys as Record<string, string>);
+      if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
+      if (settings.learningLang) setLearningLang(settings.learningLang as string);
 
       const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
       if (pageLangs) { setFrom(pageLangs.from); setTo(pageLangs.to); }
       else if (settings.nativeLang) { setTo(settings.nativeLang as string); }
+      
       setIsInitialized(true);
       updateHistoryLength();
+      setTimeout(() => { isInternalChange.current = false; }, 100);
     });
   }, []);
 
   useEffect(() => {
-    if (!isInitialized || !isContextValid()) return;
+    if (!isInitialized || !isContextValid() || isInternalChange.current) return;
     const hostname = window.location.hostname;
     chrome.storage.local.set({ [`lang_${hostname}`]: { from, to } });
   }, [from, to, isInitialized]);
@@ -323,7 +323,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       setTo(oldFrom);
     } else {
       // If we are in Auto mode, we stay in Auto mode but swap the target
-      setTo(currentFrom === to ? (to === 'ru' ? 'en' : 'ru') : to);
+      setTo(currentFrom === to ? (to === nativeLang ? learningLang : nativeLang) : to);
     }
     setOriginalText(cleanWord);
   };
