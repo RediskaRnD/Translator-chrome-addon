@@ -110,6 +110,9 @@ async function handleStopAudio() {
   currentSpeechId++;
   chrome.tts.stop();
   try {
+    // Send message to offscreen to stop playback immediately
+    chrome.runtime.sendMessage({ type: "STOP_AUDIO_OFFSCREEN" });
+
     const OFFSCREEN_PATH = "src/offscreen/offscreen.html";
     const existingContexts = await (chrome.runtime as any).getContexts({
       contextTypes: ["OFFSCREEN_DOCUMENT"],

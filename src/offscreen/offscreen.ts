@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((message) => {
     };
   }
 
-  if (message.type === 'STOP_AUDIO_INTERNAL') {
+  if (message.type === 'STOP_AUDIO_OFFSCREEN') {
     if (currentAudio) {
       currentAudio.pause();
       currentAudio.src = ''; // Force cleanup

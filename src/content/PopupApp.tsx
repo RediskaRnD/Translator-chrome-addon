@@ -19,7 +19,7 @@ interface PopupAppProps {
 function getScript(text: string): 'cyrillic' | 'latin' | null {
   const hasCyrillic = /[а-яА-ЯёЁ]/.test(text);
   const hasLatin = /[a-zA-Z]/.test(text);
-  
+
   if (hasCyrillic && !hasLatin) return 'cyrillic';
   if (hasLatin && !hasCyrillic) return 'latin';
   return null;
@@ -28,13 +28,13 @@ function getScript(text: string): 'cyrillic' | 'latin' | null {
 function isLanguageInScript(lang: string, script: 'cyrillic' | 'latin'): boolean {
   const cyrillicLangs = ['ru', 'be', 'uk', 'bg', 'mk', 'sr', 'kk', 'ky', 'tg'];
   const isCyrillicLang = cyrillicLangs.includes(lang.split('-')[0]);
-  
+
   if (script === 'cyrillic') return isCyrillicLang;
   // Most other common languages in this extension's context use Latin
   return !isCyrillicLang;
 }
 
-export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version, theme: initialTheme }) => {
+export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version, theme: initialTheme, onClose }) => {
   const popupRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
   const [isPinned, setIsPinned] = useState(false);
@@ -77,7 +77,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const speak = (text: string, langCode: string, saveAsPreference: boolean = false) => {
     if (!isContextValid()) return;
-    
+
     // Check if the language is actually supported by the current engine
     const baseLang = langCode.split('-')[0].toLowerCase();
     if (supportedLangs.length > 0 && !supportedLangs.includes(baseLang)) {
@@ -86,7 +86,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
 
     chrome.runtime.sendMessage({ type: "SPEAK", payload: { text, langCode } });
-    
+
     if (saveAsPreference && langCode.includes('-')) {
       const baseLang = langCode.split('-')[0];
       chrome.storage.local.get(['preferredAccents'], (result) => {
@@ -180,7 +180,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         if (res && isContextValid()) {
           const textScript = getScript(text);
           let detected = res.detectedLanguage || (textScript === 'latin' ? learningLang : nativeLang);
-          
+
           if (textScript && !isLanguageInScript(detected, textScript) && text.length < 30) {
             const fallback = textScript === 'latin' ? learningLang : nativeLang;
             console.log(`QT: Script mismatch detected. Text is ${textScript}, but API said ${detected}. Overriding to ${fallback}.`);
@@ -216,7 +216,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           if (autoPlayback !== 'off') {
             const textToSpeak = autoPlayback === 'from' ? text : res.translatedText;
             const langToSpeak = autoPlayback === 'from' ? finalFrom : finalTo;
-            
+
             chrome.storage.local.get(["autoPlaybackLimit"], (settings) => {
               const autoLimit = settings.autoPlaybackLimit ?? DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
               if (textToSpeak.length <= autoLimit) {
@@ -232,7 +232,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   // Listen for hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // If user is typing in a select/input, don't trigger hotkeys except ESC
+      const isTyping = e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (isTyping) return;
 
       if (e.code === hotkeys.PIN) { e.preventDefault(); setIsPinned(prev => !prev); }
       else if (e.code === hotkeys.SETTINGS) { e.preventDefault(); openOptions(); }
@@ -241,9 +250,15 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       else if (e.code === hotkeys.TOGGLE_AUTOPLAY) { e.preventDefault(); toggleAutoPlayback(); }
       else if (e.code === hotkeys.REPLAY) { e.preventDefault(); replayAudio(); }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hotkeys, historyIndex, historyLength, autoPlayback, originalText, translatedText, from, to, detectedFrom]);
+
+    // Focus the popup so it captures keys immediately
+    if (popupRef.current) {
+      popupRef.current.focus();
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true); // Use capture phase for better reliability
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [hotkeys, historyIndex, historyLength, autoPlayback, originalText, translatedText, from, to, detectedFrom, onClose]);
 
   useEffect(() => {
     if (!isContextValid()) return;
@@ -261,7 +276,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
       if (pageLangs) { setFrom(pageLangs.from); setTo(pageLangs.to); }
       else if (settings.nativeLang) { setTo(settings.nativeLang as string); }
-      
+
       setIsInitialized(true);
       updateHistoryLength();
       updateSupportedLangs();
@@ -337,7 +352,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const handleWordClick = (word: string) => {
     const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
     if (!cleanWord) return;
-    
+
     if (from !== 'auto') {
       const oldFrom = from;
       setFrom(to);
