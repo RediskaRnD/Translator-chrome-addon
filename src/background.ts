@@ -168,7 +168,6 @@ async function handleSpeakAzure(
       }
     }
 
-    // IMPORTANT FIX: Azure keys in preferredVoices now use the full accentCode (e.g. 'en-US')
     let selectedVoiceShortName = preferredVoices[accentCode] || preferredVoices[baseLang];
     const isValidAzureName = selectedVoiceShortName && selectedVoiceShortName.split('-').length >= 3;
 
@@ -178,8 +177,12 @@ async function handleSpeakAzure(
                    || voices.find((v: any) => v.Locale === accentCode && v.Gender === targetGender)
                    || voices.find((v: any) => v.Locale === accentCode && v.ShortName.includes('Neural'))
                    || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.Gender === targetGender && v.ShortName.includes('Neural'))
-                   || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.ShortName.includes('Neural'))
-                   || { ShortName: 'en-US-AvaNeural' };
+                   || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.ShortName.includes('Neural'));
+      
+      if (!bestVoice) {
+        console.warn(`Background [Azure]: No voice found for ${accentCode}, falling back to Google`);
+        throw new Error('NO_AZURE_VOICE');
+      }
       selectedVoiceShortName = bestVoice.ShortName;
     }
 
@@ -232,6 +235,11 @@ async function handleSpeakGoogle(text: string, accentCode: string, preferredVoic
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${accentCode.toLowerCase()}&client=tw-ob&q=${encodeURIComponent(text)}`;
   const response = await fetch(url);
   if (mySpeechId !== currentSpeechId) return;
+
+  if (!response.ok) {
+    console.warn(`Background [Google]: TTS not supported for ${accentCode} (Status: ${response.status})`);
+    throw new Error('GOOGLE_TTS_NOT_SUPPORTED');
+  }
 
   const arrayBuffer = await response.arrayBuffer();
   if (mySpeechId !== currentSpeechId) return;
