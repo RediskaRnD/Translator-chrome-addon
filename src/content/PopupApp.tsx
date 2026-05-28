@@ -487,7 +487,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .pos-header { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--pos-text); text-transform: uppercase; font-weight: 600; margin-bottom: 6px; letter-spacing: 0.5px; user-select: none; }
         .pos-line { flex: 1; height: 1px; background: var(--pos-line); }
         .accent-buttons { display: flex; gap: 3px; user-select: none; }
-        .accent-btn { width: 28px; height: 18px; display: flex; align-items: center; justify-content: center; background: var(--btn-bg); border: 1px solid var(--accent-btn-border); border-radius: 3px; font-size: 9px; font-weight: bold; cursor: pointer; color: var(--text-secondary); user-select: none; }
+        .accent-btn { width: 22px; height: 18px; display: flex; align-items: center; justify-content: center; background: var(--btn-bg); border: 1px solid var(--accent-btn-border); border-radius: 3px; font-size: 9px; font-weight: bold; cursor: pointer; color: var(--text-secondary); user-select: none; }
         .accent-btn:hover { background: var(--primary-color); color: white; }
         .footer { padding: 4px 12px; background: var(--footer-bg); border-top: 1px solid var(--header-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
         .forvo-link { color: var(--primary-color); text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }

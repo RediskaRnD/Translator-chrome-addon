@@ -2,13 +2,14 @@ import { createRoot, Root } from 'react-dom/client';
 import { PopupApp } from './PopupApp';
 
 console.log('Quick Translator: Content script initialized');
-
 let container: HTMLDivElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
 let reactRoot: Root | null = null;
+let lastSelectionAtMouseDown: { text: string, rect: any } | null = null;
 
 /**
  * Checks if the extension context is still valid.
+
  * When the extension is updated or reloaded, the content script context becomes invalidated.
  */
 function isContextValid() {
@@ -84,7 +85,7 @@ async function showPopup(text: string, rect: any) {
 
   if (!isPinned) {
     const popupWidth = 350 * scale;
-    const popupHeight = 200 * scale; 
+    const popupHeight = 200 * scale;
     const margin = 10;
 
     x = rect.left;
@@ -109,11 +110,11 @@ async function showPopup(text: string, rect: any) {
   }
 
   reactRoot.render(
-    <PopupApp 
-      x={isPinned ? undefined : x} 
-      y={isPinned ? undefined : y} 
-      initialText={text} 
-      onClose={hidePopup} 
+    <PopupApp
+      x={isPinned ? undefined : x}
+      y={isPinned ? undefined : y}
+      initialText={text}
+      onClose={hidePopup}
       version={version}
       theme={theme}
     />
@@ -130,11 +131,11 @@ window.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'QT_SELECTION') {
     const { text, rect } = event.data;
     console.log(`QT Frame [${window === window.top ? 'TOP' : 'SUB'}]: Received QT_SELECTION`, { text, rect });
-    
+
     // Find the iframe that sent the message
     const iframes = document.querySelectorAll('iframe, frame');
     const senderIframe = Array.from(iframes).find(f => (f as any).contentWindow === event.source);
-    
+
     let absoluteRect = rect;
     if (senderIframe) {
       const offset = senderIframe.getBoundingClientRect();
@@ -217,13 +218,13 @@ function trimNonAlphanumeric(text: string): string {
 
 function getSelectionData(target?: EventTarget | null) {
   console.log('QT: getSelectionData start', { target });
-  
+
   // 1. Standard selection (regular text)
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0) {
     const rawText = selection.toString();
     const text = trimNonAlphanumeric(rawText);
-    
+
     if (text) {
       try {
         const range = selection.getRangeAt(0);
@@ -242,14 +243,14 @@ function getSelectionData(target?: EventTarget | null) {
             }
           };
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
   // 2. Input/Textarea selection
   // Try to find the input element: check target, then activeElement, then Shadow DOM
   let input: HTMLInputElement | HTMLTextAreaElement | null = null;
-  
+
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
     input = target;
   } else {
@@ -267,17 +268,17 @@ function getSelectionData(target?: EventTarget | null) {
     try {
       const start = input.selectionStart;
       const end = input.selectionEnd;
-      console.log('QT: Checking input selection', { 
-        tagName: input.tagName, 
-        start, 
-        end, 
-        valueLength: input.value.length 
+      console.log('QT: Checking input selection', {
+        tagName: input.tagName,
+        start,
+        end,
+        valueLength: input.value.length
       });
-      
+
       if (start !== null && end !== null && start !== end) {
         const rawText = input.value.substring(start, end);
         const text = trimNonAlphanumeric(rawText);
-        
+
         if (text) {
           const rect = input.getBoundingClientRect();
           console.log('QT: Detected input selection', { text, rect });
@@ -307,16 +308,17 @@ document.addEventListener('mousedown', (event) => {
   if (!isContextValid()) return;
 
   const path = event.composedPath();
-  const isInsidePopup = path.some(el => 
-    el instanceof HTMLElement && el.classList.contains('translator-popup-container')
+  const isInsidePopup = path.some(el =>
+    el instanceof HTMLElement && (el.classList.contains('translator-popup-container') || el.classList.contains('popup'))
   );
-  
+
   if (isInsidePopup) return;
+
+  // Capture selection state at the moment of click
+  lastSelectionAtMouseDown = getSelectionData(event.target);
 
   if (window !== window.top) {
     window.parent.postMessage({ type: 'QT_HIDE' }, '*');
-  } else {
-    // Top frame handles its own outside clicks via handleOutsideClick
   }
 }, { capture: true });
 
@@ -324,20 +326,27 @@ document.addEventListener('mouseup', (event) => {
   if (!isContextValid()) return;
 
   const path = event.composedPath();
-  const isInsidePopup = path.some(el => 
-    el instanceof HTMLElement && el.classList.contains('translator-popup-container')
+  const isInsidePopup = path.some(el =>
+    el instanceof HTMLElement && (el.classList.contains('translator-popup-container') || el.classList.contains('popup'))
   );
-  
+
   if (isInsidePopup) return;
 
-  // Store target immediately as it might change after timeout
+  // Store target immediately
   const target = event.target;
 
   // Delay to ensure selection is updated
   setTimeout(() => {
-    const data = getSelectionData(target);
-    if (data) {
-      showPopup(data.text, data.rect);
+    const currentData = getSelectionData(target);
+
+    // Check if selection actually changed or is new
+    const isNewSelection = currentData && (!lastSelectionAtMouseDown ||
+      currentData.text !== lastSelectionAtMouseDown.text ||
+      Math.abs(currentData.rect.left - lastSelectionAtMouseDown.rect.left) > 5 ||
+      Math.abs(currentData.rect.top - lastSelectionAtMouseDown.rect.top) > 5);
+
+    if (isNewSelection && currentData) {
+      showPopup(currentData.text, currentData.rect);
     }
   }, 10);
 }, { capture: true });
