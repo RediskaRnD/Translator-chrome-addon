@@ -60,15 +60,31 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [historyLength, setHistoryLength] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
+  const [supportedLangs, setSupportedLangs] = useState<string[]>([]);
   const isNavigatingHistory = React.useRef(false);
   const isInternalChange = React.useRef(false);
 
   const currentFrom = from === 'auto' ? detectedFrom : from;
 
+  const updateSupportedLangs = useCallback(() => {
+    if (!isContextValid()) return;
+    chrome.runtime.sendMessage({ type: "GET_SUPPORTED_LANGUAGES" }, (langs) => {
+      if (Array.isArray(langs)) setSupportedLangs(langs);
+    });
+  }, []);
+
   const isContextValid = () => typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
 
   const speak = (text: string, langCode: string, saveAsPreference: boolean = false) => {
     if (!isContextValid()) return;
+    
+    // Check if the language is actually supported by the current engine
+    const baseLang = langCode.split('-')[0].toLowerCase();
+    if (supportedLangs.length > 0 && !supportedLangs.includes(baseLang)) {
+      console.log(`QT: Skipping audio for unsupported language: ${langCode}`);
+      return;
+    }
+
     chrome.runtime.sendMessage({ type: "SPEAK", payload: { text, langCode } });
     
     if (saveAsPreference && langCode.includes('-')) {
@@ -248,9 +264,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       
       setIsInitialized(true);
       updateHistoryLength();
+      updateSupportedLangs();
       setTimeout(() => { isInternalChange.current = false; }, 100);
     });
-  }, []);
+  }, [updateSupportedLangs]);
+
+  useEffect(() => {
+    if (isInitialized) updateSupportedLangs();
+  }, [from, to, isInitialized, updateSupportedLangs]);
 
   useEffect(() => {
     if (!isInitialized || !isContextValid() || isInternalChange.current) return;
@@ -331,14 +352,18 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
     const accents = getAccentsForLanguage(lang);
     const list = accents.length > 0 ? accents : [{ code: lang, label: <IoVolumeMediumOutline /> }];
+    const isSupported = supportedLangs.includes(lang.split('-')[0].toLowerCase());
+
     return (
       <div className="line" key={key || text}>
         <div className="word-text">
           {isTranslation ? text.split(/(\s+)/).map((part, i) => part.trim() ? <span key={i} className="clickable-word" onClick={() => handleWordClick(part)}>{part}</span> : part) : text}
         </div>
-        <div className="accent-buttons">
-          {list.map((a) => <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code, true)}>{a.label}</button>)}
-        </div>
+        {isSupported && (
+          <div className="accent-buttons">
+            {list.map((a) => <button key={a.code} className="accent-btn" onClick={() => speak(text, a.code, true)}>{a.label}</button>)}
+          </div>
+        )}
       </div>
     );
   };

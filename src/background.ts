@@ -6,6 +6,11 @@ import { DEFAULT_SETTINGS, DEFAULT_HOTKEYS } from "./shared/constants";
 const VERSION = chrome.runtime.getManifest().version;
 let currentSpeechId = 0;
 
+const GOOGLE_TTS_LANGS = [
+  'af', 'sq', 'ar', 'hy', 'bn', 'ca', 'zh', 'zh-cn', 'zh-tw', 'hr', 'cs', 'da', 'nl', 'en', 'eo', 'fi', 'fr', 'de', 'el', 'hi', 'hu', 
+  'is', 'id', 'it', 'ja', 'km', 'ko', 'la', 'lv', 'mk', 'no', 'pl', 'pt', 'ro', 'ru', 'sr', 'sk', 'es', 'sw', 'sv', 'ta', 'th', 'tr', 'uk', 'vi', 'cy'
+];
+
 // Set default settings on install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(
@@ -84,8 +89,22 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     CacheManager.clearAllCache().then(() => sendResponse({ success: true }));
     return true;
   }
+
+  if (message.type === "GET_SUPPORTED_LANGUAGES") {
+    getSupportedLangs().then(sendResponse);
+    return true;
+  }
   return false;
 });
+
+async function getSupportedLangs(): Promise<string[]> {
+  const settings = await chrome.storage.local.get(["ttsEngine", "azureVoicesCache"]) as any;
+  if (settings.ttsEngine === 'azure' && settings.azureVoicesCache) {
+    const azureLocales = Array.from(new Set(settings.azureVoicesCache.map((v: any) => v.Locale.split('-')[0].toLowerCase())));
+    return azureLocales as string[];
+  }
+  return GOOGLE_TTS_LANGS;
+}
 
 async function handleStopAudio() {
   currentSpeechId++;

@@ -9,7 +9,7 @@ export interface TranslationResponse {
   detectedLanguage?: string;
 }
 
-export type AutoPlaybackMode = 'off' | 'from' | 'to';
+export type AutoPlaybackMode = "off" | "from" | "to";
 
 export interface Settings {
   nativeLang: string;
@@ -17,7 +17,7 @@ export interface Settings {
   preferredVoices: Record<string, string>; // languageCode -> voiceName
   preferredAccents: Record<string, string>; // languageCode -> accentCode
   historyLimit: number;
-  theme: 'light' | 'dark' | 'system';
+  theme: "light" | "dark" | "system";
   autoPlayback: AutoPlaybackMode;
   uiScale: number;
 }
@@ -30,10 +30,18 @@ export interface HistoryItem {
   timestamp: number;
 }
 
-export type MessageType = 'TRANSLATE' | 'SPEAK' | 'STOP_AUDIO' | 'PLAY_SAMPLE' | 'GET_VOICES' | 'PING' | 'OPEN_OPTIONS' | 'CLEAR_CACHE';
+export type MessageType =
+  | "GET_SUPPORTED_LANGUAGES"
+  | "GET_VOICES"
+  | "TRANSLATE"
+  | "SPEAK"
+  | "STOP_AUDIO"
+  | "PLAY_SAMPLE"
+  | "PING"
+  | "OPEN_OPTIONS"
+  | "CLEAR_CACHE";
 
 export interface Message {
   type: MessageType;
   payload?: any;
 }
-
