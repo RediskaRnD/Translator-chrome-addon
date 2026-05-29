@@ -3,10 +3,10 @@ import { LANGUAGES } from '../shared/languages';
 import { getAccentsForLanguage } from '../shared/accents';
 import { DEFAULT_SETTINGS, DEFAULT_HOTKEYS } from '../shared/constants';
 
-type SettingsTab = 'general' | 'engine' | 'voice' | 'theme' | 'hotkeys';
+type SettingsTab = 'engine' | 'voice' | 'theme' | 'hotkeys' | 'other';
 
 export const OptionsApp: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('voice');
   const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [preferredVoices, setPreferredVoices] = useState<Record<string, string>>({});
@@ -192,7 +192,9 @@ export const OptionsApp: React.FC = () => {
     if (ttsEngine === 'azure') {
       const baseLang = lang.split('-')[0].toLowerCase();
       const relevantVoices = azureVoices.filter(v => v.Locale.toLowerCase().startsWith(baseLang));
-      availableAzureLocales = Array.from(new Set(relevantVoices.map(v => v.Locale))).sort();
+      availableAzureLocales = Array.from(new Set(relevantVoices.map(v => v.Locale)))
+        .filter(loc => !loc.includes('-Latn-'))
+        .sort();
 
       currentVoices = relevantVoices
         .filter(v => (v.Locale === selectedAccent || v.Locale.startsWith(selectedAccent + '-')) && v.Gender === selectedGender)
@@ -262,7 +264,7 @@ export const OptionsApp: React.FC = () => {
             {ttsEngine === 'azure' ? (
               currentVoices.map((voice) => (
                 <option key={voice.ShortName} value={voice.ShortName}>
-                  {voice.DisplayName} {voice.ShortName.includes('Neural') ? '(N)' : ''}
+                  {voice.DisplayName} {voice.SampleRateHertz ? `${voice.SampleRateHertz / 1000} kHz` : ''}
                 </option>
               ))
             ) : (
@@ -279,24 +281,6 @@ export const OptionsApp: React.FC = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'general':
-        return (
-          <>
-            <section className="setting-group">
-              <h3>Behavior & Limits</h3>
-              <div className="input-field">
-                <label>History Limit</label>
-                <p className="field-desc">How many recent translations to keep in history.</p>
-                <input type="number" min="1" max="100" value={historyLimit} onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 20)} />
-              </div>
-              <div className="input-field">
-                <label>Auto-play Limit (chars)</label>
-                <p className="field-desc">Max length of text to automatically speak after translation.</p>
-                <input type="number" min="10" max="1000" value={autoPlaybackLimit} onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || 100)} />
-              </div>
-            </section>
-          </>
-        );
       case 'engine':
         return (
           <section className="setting-group">
@@ -396,6 +380,24 @@ export const OptionsApp: React.FC = () => {
             </div>
           </section>
         );
+      case 'other':
+        return (
+          <>
+            <section className="setting-group">
+              <h3>Behavior & Limits</h3>
+              <div className="input-field">
+                <label>History Limit</label>
+                <p className="field-desc">How many recent translations to keep in history.</p>
+                <input type="number" min="1" max="100" value={historyLimit} onChange={(e) => setHistoryLimit(parseInt(e.target.value) || 20)} />
+              </div>
+              <div className="input-field">
+                <label>Auto-play Limit (chars)</label>
+                <p className="field-desc">Max length of text to automatically speak after translation.</p>
+                <input type="number" min="10" max="1000" value={autoPlaybackLimit} onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || 100)} />
+              </div>
+            </section>
+          </>
+        );
       default: return null;
     }
   };
@@ -406,11 +408,11 @@ export const OptionsApp: React.FC = () => {
         <aside className="sidebar">
           <div className="sidebar-header"><span className="logo">🌐</span><h2>Settings</h2></div>
           <nav className="nav-menu">
-            <button className={activeTab === 'general' ? 'active' : ''} onClick={() => setActiveTab('general')}>General</button>
             <button className={activeTab === 'voice' ? 'active' : ''} onClick={() => setActiveTab('voice')}>Voice & Lang</button>
             <button className={activeTab === 'engine' ? 'active' : ''} onClick={() => setActiveTab('engine')}>TTS Engine</button>
             <button className={activeTab === 'theme' ? 'active' : ''} onClick={() => setActiveTab('theme')}>Theme</button>
             <button className={activeTab === 'hotkeys' ? 'active' : ''} onClick={() => setActiveTab('hotkeys')}>Hotkeys</button>
+            <button className={activeTab === 'other' ? 'active' : ''} onClick={() => setActiveTab('other')}>Other</button>
           </nav>
           <div className="sidebar-footer">
             <button className="clear-cache-link" onClick={() => { if (confirm('Clear cache?')) chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' }, () => setStatus('Cleared')); }}>Clear Cache</button>
