@@ -84,22 +84,42 @@ async function showPopup(text: string, rect: any) {
   let y = 0;
 
   if (!isPinned) {
-    const popupWidth = 350 * scale;
-    const popupHeight = 200 * scale;
+    const popupWidth = 350; // Base width from CSS
+    const popupHeight = 200; // Base height estimate
     const margin = 10;
+
+    // We calculate position in absolute pixels first, 
+    // but the boundary checks must account for the scale.
+    const scaledWidth = popupWidth * scale;
+    const scaledHeight = popupHeight * scale;
 
     x = rect.left;
     y = rect.bottom + margin;
 
-    if (x + popupWidth > window.innerWidth) x = window.innerWidth - popupWidth - margin;
+    // Keep within viewport boundaries, accounting for scale
+    if (x + scaledWidth > window.innerWidth) x = window.innerWidth - scaledWidth - margin;
     if (x < 0) x = margin;
-    if (y + popupHeight > window.innerHeight) {
-      const spaceAbove = rect.top - popupHeight - margin;
-      if (spaceAbove > 0) y = spaceAbove;
+
+    if (y + scaledHeight > window.innerHeight) {
+      const spaceAbove = rect.top - scaledHeight - margin;
+      if (spaceAbove > 0) {
+        y = spaceAbove;
+      } else {
+        // If it doesn't fit anywhere, just keep it at the bottom but push up
+        y = window.innerHeight - scaledHeight - margin;
+      }
     }
     if (y < 0) y = margin;
-  }
 
+    // The PopupApp component uses `zoom: scale` or CSS transform.
+    // If we use `zoom`, the 'left' and 'top' values usually need to be 
+    // divided by scale if the parent is scaled, OR kept as is if the parent is not.
+    // Since our container is 100% width/height and not scaled, but the .popup 
+    // element inside has `zoom: scale`, we need to pass coordinates that 
+    // will result in the correct visual position AFTER the zoom is applied.
+    x = x / scale;
+    y = y / scale;
+  }
   console.log('QT Topframe: Rendering popup at', { x, y, isPinned });
 
   if (!reactRoot) {

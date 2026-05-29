@@ -36,14 +36,16 @@ function isLanguageInScript(lang: string, script: 'cyrillic' | 'latin'): boolean
 
 export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version, theme: initialTheme, onClose }) => {
   const popupRef = React.useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x: propX || 0, y: propY || 0 });
+  const lastMousePos = React.useRef({ x: 0, y: 0 });
+  const [pos, setPos] = useState({ x: propX ?? 0, y: propY ?? 0 });
   const [isPinned, setIsPinned] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hasMovedManually, setHasMovedManually] = useState(false);
 
   const [isResizing, setIsResizing] = useState(false);
   const [manualHeight, setManualHeight] = useState<number | null>(null);
   const [scale, setScale] = useState(DEFAULT_SETTINGS.UI_SCALE);
+  const [isReady, setIsReady] = useState(false); // New: to prevent flash
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(initialTheme || DEFAULT_SETTINGS.THEME);
   const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
@@ -63,6 +65,10 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [supportedLangs, setSupportedLangs] = useState<string[]>([]);
   const isNavigatingHistory = React.useRef(false);
   const isInternalChange = React.useRef(false);
+
+  // Use propX/Y for initialization, but once moved manually, stick to internal state
+  const displayX = hasMovedManually ? pos.x : (propX ?? pos.x);
+  const displayY = hasMovedManually ? pos.y : (propY ?? pos.y);
 
   const currentFrom = from === 'auto' ? detectedFrom : from;
 
@@ -261,6 +267,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   }, [hotkeys, historyIndex, historyLength, autoPlayback, originalText, translatedText, from, to, detectedFrom, onClose]);
 
   useEffect(() => {
+    setIsReady(true);
     if (!isContextValid()) return;
     const hostname = window.location.hostname;
     chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'learningLang', 'hotkeys'], (settings) => {
@@ -316,17 +323,32 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.classList.contains('resize-handle-bottom')) return;
+    
+    // Sync current position before starting drag to prevent jumps
+    setPos({ x: displayX, y: displayY });
     setIsDragging(true);
-    setDragStart({ x: e.clientX - pos.x, y: e.clientY - pos.y });
+    setHasMovedManually(true);
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleResizeStart = (e: React.MouseEvent) => { e.preventDefault(); setIsResizing(true); };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) setPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+      if (isDragging) {
+        const deltaX = (e.clientX - lastMousePos.current.x) / scale;
+        const deltaY = (e.clientY - lastMousePos.current.y) / scale;
+        
+        setPos(prev => ({
+          x: prev.x + deltaX,
+          y: prev.y + deltaY
+        }));
+        
+        lastMousePos.current = { x: e.clientX, y: e.clientY };
+      }
+      
       if (isResizing) {
-        const popupElement = document.querySelector('.translator-popup-container')?.shadowRoot?.querySelector('.popup') as HTMLElement;
+        const popupElement = popupRef.current;
         if (popupElement) {
           const rect = popupElement.getBoundingClientRect();
           const newHeight = (e.clientY - rect.top) / scale;
@@ -337,7 +359,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     const handleMouseUp = () => { setIsDragging(false); setIsResizing(false); };
     if (isDragging || isResizing) { window.addEventListener('mousemove', handleMouseMove); window.addEventListener('mouseup', handleMouseUp); }
     return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
-  }, [isDragging, isResizing, dragStart, scale]);
+  }, [isDragging, isResizing, scale]);
 
   useEffect(() => {
     const container = document.querySelector('.translator-popup-container');
@@ -392,10 +414,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   };
 
   const popupStyle: React.CSSProperties = {
-    left: pos.x, top: pos.y,
+    left: displayX, top: displayY,
     height: manualHeight !== null ? `${manualHeight}px` : 'auto',
     maxHeight: manualHeight !== null ? 'none' : `${UI_CONSTANTS.MAX_POPUP_HEIGHT}px`,
-    zoom: scale
+    zoom: scale,
+    opacity: isReady ? 1 : 0,
+    transition: isReady ? 'opacity 0.15s ease-out' : 'none'
   };
 
   const getShortCode = (code: string) => {
