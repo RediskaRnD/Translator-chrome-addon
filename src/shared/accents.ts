@@ -86,7 +86,7 @@ export const LANGUAGE_ACCENTS: Record<string, Accent[]> = {
 export function getAccentsForLanguage(lang: string): Accent[] {
   // Normalize code (e.g., 'en-US' -> 'en')
   const baseCode = lang.split("-")[0].toLowerCase();
-  console.log(`Getting accents for language: ${lang} (base: ${baseCode})`);
+  console.log(`Available accents for ${baseCode}:`, LANGUAGE_ACCENTS[baseCode]);
   if (LANGUAGE_ACCENTS[baseCode]) {
     return LANGUAGE_ACCENTS[baseCode];
   }

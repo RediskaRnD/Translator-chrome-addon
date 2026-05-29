@@ -209,6 +209,9 @@ export const OptionsApp: React.FC = () => {
       currentVoices = voices.filter(v => v.lang?.startsWith(selectedAccent.split('-')[0]));
     }
 
+    const voiceKey = ttsEngine === 'azure' ? selectedAccent : lang;
+    const currentVoiceId = preferredVoices[voiceKey] || (currentVoices[0]?.ShortName || currentVoices[0]?.voiceName || '');
+
     return (
       <div className="voice-selector-box">
         <div className="voice-box-header">
@@ -223,6 +226,7 @@ export const OptionsApp: React.FC = () => {
             <label>Region / Accent</label>
             <select
               value={selectedAccent}
+              disabled={ttsEngine === 'azure' ? availableAzureLocales.length < 2 : accents.length < 2}
               onChange={(e) => {
                 const newAccent = e.target.value;
                 setPreferredAccents({ ...preferredAccents, [lang]: newAccent });
@@ -244,8 +248,28 @@ export const OptionsApp: React.FC = () => {
             <div className="input-field mini">
               <label>Gender</label>
               <div className="gender-toggle">
-                <button className={selectedGender === 'Female' ? 'active' : ''} onClick={() => setPreferredGenders({ ...preferredGenders, [lang]: 'Female' })}>Female</button>
-                <button className={selectedGender === 'Male' ? 'active' : ''} onClick={() => setPreferredGenders({ ...preferredGenders, [lang]: 'Male' })}>Male</button>
+                <button 
+                  className={selectedGender === 'Female' ? 'active' : ''} 
+                  onClick={() => {
+                    setPreferredGenders({ ...preferredGenders, [lang]: 'Female' });
+                    const newVoices = { ...preferredVoices };
+                    delete newVoices[ttsEngine === 'azure' ? selectedAccent : lang];
+                    setPreferredVoices(newVoices);
+                  }}
+                >
+                  Female
+                </button>
+                <button 
+                  className={selectedGender === 'Male' ? 'active' : ''} 
+                  onClick={() => {
+                    setPreferredGenders({ ...preferredGenders, [lang]: 'Male' });
+                    const newVoices = { ...preferredVoices };
+                    delete newVoices[ttsEngine === 'azure' ? selectedAccent : lang];
+                    setPreferredVoices(newVoices);
+                  }}
+                >
+                  Male
+                </button>
               </div>
             </div>
           )}
@@ -254,23 +278,22 @@ export const OptionsApp: React.FC = () => {
         <div className="input-field mini">
           <label>Specific Voice</label>
           <select
-            value={preferredVoices[selectedAccent] || preferredVoices[lang] || ''}
-            onChange={(e) => {
-              const voiceKey = ttsEngine === 'azure' ? selectedAccent : lang;
-              setPreferredVoices({ ...preferredVoices, [voiceKey]: e.target.value });
-            }}
+            value={currentVoiceId}
+            disabled={currentVoices.length < 2}
+            onChange={(e) => setPreferredVoices({ ...preferredVoices, [voiceKey]: e.target.value })}
           >
-            <option value="">{ttsEngine === 'azure' ? (currentVoices.length > 0 ? `-- Default ${selectedGender} --` : '-- No voices --') : 'System Default'}</option>
-            {ttsEngine === 'azure' ? (
-              currentVoices.map((voice) => (
-                <option key={voice.ShortName} value={voice.ShortName}>
-                  {voice.DisplayName} {voice.SampleRateHertz ? `${voice.SampleRateHertz / 1000} kHz` : ''}
-                </option>
-              ))
+            {currentVoices.length === 0 ? (
+              <option value="">-- No voices --</option>
             ) : (
-              currentVoices.map((voice) => (
-                <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
-              ))
+              currentVoices.map((voice) => {
+                const id = voice.ShortName || voice.voiceName;
+                const name = voice.DisplayName || voice.voiceName;
+                return (
+                  <option key={id} value={id}>
+                    {name} {voice.SampleRateHertz ? `(${Math.round(voice.SampleRateHertz / 1000)} kHz)` : ''}
+                  </option>
+                );
+              })
             )}
           </select>
         </div>
