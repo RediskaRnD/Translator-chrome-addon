@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
   TTS_ENGINE: 'google' as const,
   AZURE_KEY: '',
   AZURE_REGION: 'westeurope',
+  SHOW_TRANSCRIPTION: true,
 };
 
 export const DEFAULT_HOTKEYS = {

@@ -18,6 +18,7 @@ export const OptionsApp: React.FC = () => {
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
   const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT);
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
+  const [showTranscription, setShowTranscription] = useState(DEFAULT_SETTINGS.SHOW_TRANSCRIPTION);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
@@ -34,7 +35,7 @@ export const OptionsApp: React.FC = () => {
     chrome.storage.local.get([
       'nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'preferredGenders',
       'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit',
-      'hotkeys', 'ttsEngine', 'azureKey', 'azureRegion'
+      'hotkeys', 'ttsEngine', 'azureKey', 'azureRegion', 'showTranscription'
     ], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
@@ -50,6 +51,7 @@ export const OptionsApp: React.FC = () => {
       if (settings.ttsEngine) setTtsEngine(settings.ttsEngine as 'google' | 'azure');
       if (settings.azureKey) setAzureKey(settings.azureKey as string);
       if (settings.azureRegion) setAzureRegion(settings.azureRegion as string);
+      if (settings.showTranscription !== undefined) setShowTranscription(settings.showTranscription as boolean);
     });
 
     chrome.tts.getVoices((v) => {
@@ -111,7 +113,7 @@ export const OptionsApp: React.FC = () => {
     chrome.storage.local.set({
       nativeLang, learningLang, preferredVoices, preferredAccents, preferredGenders,
       historyLimit, uiScale, theme, autoPlayback, autoPlaybackLimit,
-      hotkeys, ttsEngine, azureKey, azureRegion
+      hotkeys, ttsEngine, azureKey, azureRegion, showTranscription
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -417,6 +419,13 @@ export const OptionsApp: React.FC = () => {
                 <label>Auto-play Limit (chars)</label>
                 <p className="field-desc">Max length of text to automatically speak after translation.</p>
                 <input type="number" min="10" max="1000" value={autoPlaybackLimit} onChange={(e) => setAutoPlaybackLimit(parseInt(e.target.value) || 100)} />
+              </div>
+              <div className="input-field checkbox-field">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={showTranscription} onChange={(e) => setShowTranscription(e.target.checked)} />
+                  <span>Show transcription for single words</span>
+                </label>
+                <p className="field-desc">Display phonetic transcription/transliteration when available.</p>
               </div>
             </section>
           </>

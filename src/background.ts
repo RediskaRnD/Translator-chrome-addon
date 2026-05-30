@@ -7,8 +7,52 @@ const VERSION = chrome.runtime.getManifest().version;
 let currentSpeechId = 0;
 
 const GOOGLE_TTS_LANGS = [
-  'af', 'sq', 'ar', 'hy', 'bn', 'ca', 'zh', 'zh-cn', 'zh-tw', 'hr', 'cs', 'da', 'nl', 'en', 'eo', 'fi', 'fr', 'de', 'el', 'hi', 'hu', 
-  'is', 'id', 'it', 'ja', 'km', 'ko', 'la', 'lv', 'mk', 'no', 'pl', 'pt', 'ro', 'ru', 'sr', 'sk', 'es', 'sw', 'sv', 'ta', 'th', 'tr', 'uk', 'vi', 'cy'
+  "af",
+  "sq",
+  "ar",
+  "hy",
+  "bn",
+  "ca",
+  "zh",
+  "zh-cn",
+  "zh-tw",
+  "hr",
+  "cs",
+  "da",
+  "nl",
+  "en",
+  "eo",
+  "fi",
+  "fr",
+  "de",
+  "el",
+  "hi",
+  "hu",
+  "is",
+  "id",
+  "it",
+  "ja",
+  "km",
+  "ko",
+  "la",
+  "lv",
+  "mk",
+  "no",
+  "pl",
+  "pt",
+  "ro",
+  "ru",
+  "sr",
+  "sk",
+  "es",
+  "sw",
+  "sv",
+  "ta",
+  "th",
+  "tr",
+  "uk",
+  "vi",
+  "cy",
 ];
 
 // Set default settings on install
@@ -26,6 +70,7 @@ chrome.runtime.onInstalled.addListener(() => {
       "preferredGenders",
       "autoPlaybackLimit",
       "hotkeys",
+      "showTranscription",
     ],
     (result) => {
       const defaults: any = {};
@@ -36,6 +81,7 @@ chrome.runtime.onInstalled.addListener(() => {
       if (!result.theme) defaults.theme = DEFAULT_SETTINGS.THEME;
       if (!result.autoPlayback) defaults.autoPlayback = DEFAULT_SETTINGS.AUTO_PLAYBACK;
       if (result.autoPlaybackLimit === undefined) defaults.autoPlaybackLimit = DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
+      if (result.showTranscription === undefined) defaults.showTranscription = DEFAULT_SETTINGS.SHOW_TRANSCRIPTION;
       if (!result.preferredVoices) defaults.preferredVoices = {};
       if (!result.preferredGenders) defaults.preferredGenders = {};
       if (!result.hotkeys) defaults.hotkeys = DEFAULT_HOTKEYS;
@@ -98,9 +144,11 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 });
 
 async function getSupportedLangs(): Promise<string[]> {
-  const settings = await chrome.storage.local.get(["ttsEngine", "azureVoicesCache"]) as any;
-  if (settings.ttsEngine === 'azure' && settings.azureVoicesCache) {
-    const azureLocales = Array.from(new Set(settings.azureVoicesCache.map((v: any) => v.Locale.split('-')[0].toLowerCase())));
+  const settings = (await chrome.storage.local.get(["ttsEngine", "azureVoicesCache"])) as any;
+  if (settings.ttsEngine === "azure" && settings.azureVoicesCache) {
+    const azureLocales = Array.from(
+      new Set(settings.azureVoicesCache.map((v: any) => v.Locale.split("-")[0].toLowerCase())),
+    );
     return azureLocales as string[];
   }
   return GOOGLE_TTS_LANGS;
@@ -127,9 +175,16 @@ async function handleStopAudio() {
 async function handleSpeak(text: string, langCode: string, bypassCache: boolean = false, previewOptions?: any) {
   const mySpeechId = ++currentSpeechId;
   console.log(`Background: handleSpeak. Text: "${text}", Lang: ${langCode}, Preview: ${!!previewOptions}`);
-  
+
   try {
-    const settings = await chrome.storage.local.get(["preferredVoices", "preferredAccents", "preferredGenders", "ttsEngine", "azureKey", "azureRegion"]) as any;
+    const settings = (await chrome.storage.local.get([
+      "preferredVoices",
+      "preferredAccents",
+      "preferredGenders",
+      "ttsEngine",
+      "azureKey",
+      "azureRegion",
+    ])) as any;
     if (mySpeechId !== currentSpeechId) return;
 
     // Use preview options if provided (unsaved UI state), otherwise use stored settings
@@ -143,12 +198,21 @@ async function handleSpeak(text: string, langCode: string, bypassCache: boolean 
     // Determine exact accent/locale to use
     // If langCode is just 'en', we look up the preferred accent (e.g. 'en-US')
     let accentToUse = langCode;
-    if (!langCode.includes('-')) {
+    if (!langCode.includes("-")) {
       accentToUse = preferredAccents[langCode] || getAccentsForLanguage(langCode)[0]?.code || langCode;
     }
 
-    if (engine === 'azure' && azureKey && azureRegion) {
-      await handleSpeakAzure(text, accentToUse, azureKey, azureRegion, mySpeechId, bypassCache, preferredVoices, preferredGenders);
+    if (engine === "azure" && azureKey && azureRegion) {
+      await handleSpeakAzure(
+        text,
+        accentToUse,
+        azureKey,
+        azureRegion,
+        mySpeechId,
+        bypassCache,
+        preferredVoices,
+        preferredGenders,
+      );
     } else {
       await handleSpeakGoogle(text, accentToUse, preferredVoices, mySpeechId, bypassCache);
     }
@@ -158,14 +222,14 @@ async function handleSpeak(text: string, langCode: string, bypassCache: boolean 
 }
 
 async function handleSpeakAzure(
-  text: string, 
-  accentCode: string, 
-  key: string, 
-  region: string, 
-  mySpeechId: number, 
+  text: string,
+  accentCode: string,
+  key: string,
+  region: string,
+  mySpeechId: number,
   bypassCache: boolean,
   preferredVoices: Record<string, string>,
-  preferredGenders: Record<string, 'Male' | 'Female'>
+  preferredGenders: Record<string, "Male" | "Female">,
 ) {
   try {
     const cacheKey = `audio_azure_${accentCode}_${text.toLowerCase().trim()}`;
@@ -177,13 +241,13 @@ async function handleSpeakAzure(
       return;
     }
 
-    const baseLang = accentCode.split('-')[0];
-    const targetGender = preferredGenders[baseLang] || 'Female';
-    
+    const baseLang = accentCode.split("-")[0];
+    const targetGender = preferredGenders[baseLang] || "Female";
+
     let voices = settings.azureVoicesCache as any[] | undefined;
     if (!voices || !Array.isArray(voices)) {
       const voicesUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
-      const voicesRes = await fetch(voicesUrl, { headers: { 'Ocp-Apim-Subscription-Key': key } });
+      const voicesRes = await fetch(voicesUrl, { headers: { "Ocp-Apim-Subscription-Key": key } });
       if (voicesRes.ok) {
         voices = await voicesRes.json();
         chrome.storage.local.set({ azureVoicesCache: voices });
@@ -191,19 +255,24 @@ async function handleSpeakAzure(
     }
 
     let selectedVoiceShortName = preferredVoices[accentCode] || preferredVoices[baseLang];
-    const isValidAzureName = selectedVoiceShortName && selectedVoiceShortName.split('-').length >= 3;
+    const isValidAzureName = selectedVoiceShortName && selectedVoiceShortName.split("-").length >= 3;
 
     if (!isValidAzureName && voices && Array.isArray(voices)) {
       console.log(`Background [Azure]: Finding best match for ${accentCode} (${targetGender})`);
-      const bestVoice = voices.find((v: any) => v.Locale === accentCode && v.Gender === targetGender && v.ShortName.includes('Neural'))
-                   || voices.find((v: any) => v.Locale === accentCode && v.Gender === targetGender)
-                   || voices.find((v: any) => v.Locale === accentCode && v.ShortName.includes('Neural'))
-                   || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.Gender === targetGender && v.ShortName.includes('Neural'))
-                   || voices.find((v: any) => v.Locale.startsWith(baseLang) && v.ShortName.includes('Neural'));
-      
+      const bestVoice =
+        voices.find(
+          (v: any) => v.Locale === accentCode && v.Gender === targetGender && v.ShortName.includes("Neural"),
+        ) ||
+        voices.find((v: any) => v.Locale === accentCode && v.Gender === targetGender) ||
+        voices.find((v: any) => v.Locale === accentCode && v.ShortName.includes("Neural")) ||
+        voices.find(
+          (v: any) => v.Locale.startsWith(baseLang) && v.Gender === targetGender && v.ShortName.includes("Neural"),
+        ) ||
+        voices.find((v: any) => v.Locale.startsWith(baseLang) && v.ShortName.includes("Neural"));
+
       if (!bestVoice) {
         console.warn(`Background [Azure]: No voice found for ${accentCode}, falling back to Google`);
-        throw new Error('NO_AZURE_VOICE');
+        throw new Error("NO_AZURE_VOICE");
       }
       selectedVoiceShortName = bestVoice.ShortName;
     }
@@ -212,15 +281,15 @@ async function handleSpeakAzure(
 
     const ttsUrl = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
     const ssml = `<speak version='1.0' xml:lang='${accentCode}'><voice xml:lang='${accentCode}' name='${selectedVoiceShortName}'>${text}</voice></speak>`;
-    
+
     const response = await fetch(ttsUrl, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Ocp-Apim-Subscription-Key': key,
-        'Content-Type': 'application/ssml+xml',
-        'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3'
+        "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
       },
-      body: ssml
+      body: ssml,
     });
 
     if (!response.ok) throw new Error(`Azure TTS error: ${response.status}`);
@@ -236,11 +305,17 @@ async function handleSpeakAzure(
   }
 }
 
-async function handleSpeakGoogle(text: string, accentCode: string, preferredVoices: Record<string, string>, mySpeechId: number, bypassCache: boolean) {
+async function handleSpeakGoogle(
+  text: string,
+  accentCode: string,
+  preferredVoices: Record<string, string>,
+  mySpeechId: number,
+  bypassCache: boolean,
+) {
   // Google preferred voices can be accent-specific or base-lang specific
-  const preferredVoiceName = preferredVoices[accentCode] || preferredVoices[accentCode.split('-')[0]];
+  const preferredVoiceName = preferredVoices[accentCode] || preferredVoices[accentCode.split("-")[0]];
 
-  if (preferredVoiceName && !preferredVoiceName.includes('-')) {
+  if (preferredVoiceName && !preferredVoiceName.includes("-")) {
     chrome.tts.speak(text, { voiceName: preferredVoiceName, lang: accentCode });
     return;
   }
@@ -260,7 +335,7 @@ async function handleSpeakGoogle(text: string, accentCode: string, preferredVoic
 
   if (!response.ok) {
     console.warn(`Background [Google]: TTS not supported for ${accentCode} (Status: ${response.status})`);
-    throw new Error('GOOGLE_TTS_NOT_SUPPORTED');
+    throw new Error("GOOGLE_TTS_NOT_SUPPORTED");
   }
 
   const arrayBuffer = await response.arrayBuffer();
@@ -271,7 +346,7 @@ async function handleSpeakGoogle(text: string, accentCode: string, preferredVoic
     try {
       await chrome.storage.local.set({ [cacheKey]: base64data });
     } catch (e: any) {
-      if (e.message?.includes('quota')) {
+      if (e.message?.includes("quota")) {
         await CacheManager.clearAudioCache();
         await chrome.storage.local.set({ [cacheKey]: base64data });
       }
@@ -316,7 +391,11 @@ async function handleTranslation(text: string, from: string, to: string) {
   const cached = await CacheManager.getTranslation(text, from, to);
   if (cached) {
     await CacheManager.addToHistory(text, from, to, cached);
-    try { return JSON.parse(cached); } catch (e) { return { translatedText: cached, alternatives: [] }; }
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      return { translatedText: cached, alternatives: [] };
+    }
   }
   const result = await translate(text, from, to);
   if (result.translatedText && !result.translatedText.startsWith("Error")) {
@@ -326,11 +405,28 @@ async function handleTranslation(text: string, from: string, to: string) {
 }
 
 async function translate(text: string, from: string, to: string) {
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&dt=at&dt=bd&q=${encodeURIComponent(text)}`;
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&dt=at&dt=bd&dt=rm&q=${encodeURIComponent(text)}`;
   try {
     const response = await fetch(url);
     const data = await response.json();
-    const mainTranslation = data[0].map((item: any) => item[0]).join("");
+
+    console.log("Translation API response:", data);
+
+    // Extract main translation
+    const mainTranslation = data[0]
+      .filter((item: any) => item[0])
+      .map((item: any) => item[0])
+      .join("");
+
+    // Extract transcription (transliteration of source text)
+    let transcriptionFrom = "";
+    let transcriptionTo = "";
+    if (data[0] && data[0].length > 1) {
+      transcriptionFrom = data[0][1][3] || "";
+      transcriptionTo = data[0][1][2] || "";
+      console.log("Extracted transcription: ", transcriptionFrom, transcriptionTo);
+    }
+
     const dictionary: { pos: string; terms: string[] }[] = [];
     if (data[1]) {
       data[1].forEach((item: any) => {
@@ -339,7 +435,12 @@ async function translate(text: string, from: string, to: string) {
         dictionary.push({ pos, terms });
       });
     }
-    return { translatedText: mainTranslation, dictionary: dictionary, detectedLanguage: data[2] };
+    return {
+      translatedText: mainTranslation,
+      dictionary: dictionary,
+      detectedLanguage: data[2],
+      transcription: { from: transcriptionFrom, to: transcriptionTo },
+    };
   } catch (error) {
     return { translatedText: "Error", dictionary: [] };
   }

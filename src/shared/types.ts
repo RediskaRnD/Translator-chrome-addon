@@ -7,6 +7,11 @@ export interface TranslationRequest {
 export interface TranslationResponse {
   translatedText: string;
   detectedLanguage?: string;
+  transcription?: {
+    from: string;
+    to: string;
+  };
+  dictionary?: { pos: string; terms: string[] }[];
 }
 
 export type AutoPlaybackMode = "off" | "from" | "to";
@@ -20,6 +25,7 @@ export interface Settings {
   theme: "light" | "dark" | "system";
   autoPlayback: AutoPlaybackMode;
   uiScale: number;
+  showTranscription: boolean;
 }
 
 export interface HistoryItem {

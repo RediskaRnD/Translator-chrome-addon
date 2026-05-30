@@ -50,10 +50,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
+  const [showTranscription, setShowTranscription] = useState(DEFAULT_SETTINGS.SHOW_TRANSCRIPTION);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const [originalText, setOriginalText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState("");
+  const [transcription, setTranscription] = useState<{ from: string; to: string } | null>(null);
   const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
   const [from, setFrom] = useState("auto");
   const [to, setTo] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
@@ -159,6 +161,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       }
 
       setTranslatedText(data.translatedText || "");
+      setTranscription(data.transcription || null);
       setDictionary(data.dictionary || (data.alternatives ? [{ pos: 'alternatives', terms: data.alternatives }] : []));
 
       chrome.storage.local.get(["autoPlayback", "autoPlaybackLimit"], (settings) => {
@@ -215,6 +218,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           }
 
           setTranslatedText(res.translatedText);
+          setTranscription(res.transcription || "");
           setDictionary(res.dictionary || []);
           setHistoryIndex(0);
           updateHistoryLength();
@@ -270,7 +274,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     setIsReady(true);
     if (!isContextValid()) return;
     const hostname = window.location.hostname;
-    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'learningLang', 'hotkeys'], (settings) => {
+    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'learningLang', 'hotkeys', 'showTranscription'], (settings) => {
       if (!isContextValid()) return;
       isInternalChange.current = true;
       if (settings.uiScale) setScale(settings.uiScale as number);
@@ -279,6 +283,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       if (settings.hotkeys) setHotkeys(settings.hotkeys as Record<string, string>);
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
+      if (settings.showTranscription !== undefined) setShowTranscription(settings.showTranscription as boolean);
 
       const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
       if (pageLangs) { setFrom(pageLangs.from); setTo(pageLangs.to); }
@@ -459,9 +464,17 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         </div>
       </div>
       <div className="content-scrollable">
-        <div className="section">{renderLine(originalText, currentFrom)}</div>
+        <div className="section">
+          {renderLine(originalText, currentFrom)}
+          {showTranscription && transcription?.from && (
+            <div className="transcription">[{transcription.from}]</div>
+          )}
+        </div>
         <div className="section" style={{ borderTop: '1px solid #eee' }}>
           {renderLine(translatedText, to, 'main-translation', true)}
+          {showTranscription && transcription?.to && (
+            <div className="transcription">[{transcription.to}]</div>
+          )}
           {dictionary.map((group, idx) => (
             <div key={idx} style={{ marginTop: '12px' }}>
               <div className="pos-header"><span>{group.pos}</span><div className="pos-line"></div></div>
@@ -479,7 +492,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .popup {
           --popup-bg: #ffffff; --header-bg: #f1f3f5; --footer-bg: #f8f9fa; --text-color: #2c3e50; --text-secondary: #7f8c8d;
           --border-color: #d0d0d0; --header-border: #e0e0e0; --btn-bg: #ffffff; --btn-border: #cccccc; --btn-hover-bg: #e0e0e0;
-          --pos-text: #b2bec3; --pos-line: #f1f2f6; --accent-btn-border: #dddddd; --primary-color: #3498db;
+          --pos-text: #b2bec3; --pos-line: #f1f2f6; --accent-btn-border: #dddddd; --primary-color: #3498db; --transcription-color: #95a5a6;
           position: fixed; background: var(--popup-bg); border-radius: 8px; box-shadow: 0 4px 30px rgba(0,0,0,0.3);
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           font-size: 14px; color: var(--text-color); z-index: 2147483647; overflow: hidden; border: 1px solid var(--border-color);
@@ -489,7 +502,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .popup[data-theme='dark'] {
           --popup-bg: #2c2c2c; --header-bg: #1e1e1e; --footer-bg: #1e1e1e; --text-color: #e0e0e0; --text-secondary: #a0a0a0;
           --border-color: #444444; --header-border: #333333; --btn-bg: #3d3d3d; --btn-border: #555555; --btn-hover-bg: #4d4d4d;
-          --pos-text: #888888; --pos-line: #3d3d3d; --accent-btn-border: #555555; --primary-color: #3498db;
+          --pos-text: #888888; --pos-line: #3d3d3d; --accent-btn-border: #555555; --primary-color: #3498db; --transcription-color: #7f8c8d;
         }
         .header { background: var(--header-bg); padding: 4px 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--header-border); flex-shrink: 0; user-select: none; }
         .lang-selects { display: flex; align-items: center; gap: 4px; user-select: none; }
@@ -508,6 +521,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .word-text { line-height: 1.4; word-break: break-word; flex: 1; }
         .clickable-word { cursor: pointer; border-bottom: 1px dashed transparent; transition: border-color 0.2s; }
         .clickable-word:hover { border-bottom-color: var(--primary-color); color: var(--primary-color); }
+        .transcription { font-size: 12px; color: var(--transcription-color); margin-top: -2px; font-style: italic; }
         .pos-header { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--pos-text); text-transform: uppercase; font-weight: 600; margin-bottom: 6px; letter-spacing: 0.5px; user-select: none; }
         .pos-line { flex: 1; height: 1px; background: var(--pos-line); }
         .accent-buttons { display: flex; gap: 3px; user-select: none; }
