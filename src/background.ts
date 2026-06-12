@@ -1,10 +1,26 @@
-import { Message } from "./shared/types";
+import { Message, TranslationResponse } from "./shared/types";
 import { CacheManager } from "./shared/CacheManager";
 import { getAccentsForLanguage } from "./shared/accents";
 import { DEFAULT_SETTINGS, DEFAULT_HOTKEYS } from "./shared/constants";
+import { translate, fetchFreeDictionary } from "./shared/api";
 
 const VERSION = chrome.runtime.getManifest().version;
 let currentSpeechId = 0;
+
+const DICT_SUPPORTED_LANGS: Record<string, string> = {
+  en: "en",
+  hi: "hi",
+  es: "es",
+  fr: "fr",
+  ja: "ja",
+  ru: "ru",
+  de: "de",
+  it: "it",
+  ko: "ko",
+  pt: "pt-BR",
+  ar: "ar",
+  tr: "tr",
+};
 
 const GOOGLE_TTS_LANGS = [
   "af",
@@ -71,6 +87,9 @@ chrome.runtime.onInstalled.addListener(() => {
       "autoPlaybackLimit",
       "hotkeys",
       "showTranscription",
+      "showDefinitions",
+      "showExamples",
+      "showSynonyms",
     ],
     (result) => {
       const defaults: any = {};
@@ -82,6 +101,9 @@ chrome.runtime.onInstalled.addListener(() => {
       if (!result.autoPlayback) defaults.autoPlayback = DEFAULT_SETTINGS.AUTO_PLAYBACK;
       if (result.autoPlaybackLimit === undefined) defaults.autoPlaybackLimit = DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
       if (result.showTranscription === undefined) defaults.showTranscription = DEFAULT_SETTINGS.SHOW_TRANSCRIPTION;
+      if (result.showDefinitions === undefined) defaults.showDefinitions = DEFAULT_SETTINGS.SHOW_DEFINITIONS;
+      if (result.showExamples === undefined) defaults.showExamples = DEFAULT_SETTINGS.SHOW_EXAMPLES;
+      if (result.showSynonyms === undefined) defaults.showSynonyms = DEFAULT_SETTINGS.SHOW_SYNONYMS;
       if (!result.preferredVoices) defaults.preferredVoices = {};
       if (!result.preferredGenders) defaults.preferredGenders = {};
       if (!result.hotkeys) defaults.hotkeys = DEFAULT_HOTKEYS;
@@ -397,51 +419,25 @@ async function handleTranslation(text: string, from: string, to: string) {
       return { translatedText: cached, alternatives: [] };
     }
   }
-  const result = await translate(text, from, to);
+
+  const settings = await chrome.storage.local.get(["showDefinitions", "showExamples", "showSynonyms"]);
+  const shouldFetchDict = settings.showDefinitions || settings.showExamples || settings.showSynonyms;
+
+  const result: TranslationResponse = await translate(text, from, to);
+
+  const langCode = from === "auto" ? result.detectedLanguage : from;
+  const dictLang = langCode ? DICT_SUPPORTED_LANGS[langCode.split("-")[0]] : null;
+  const isSingleWord = text.trim().split(/\s+/).length === 1;
+
+  if (shouldFetchDict && dictLang && isSingleWord) {
+    const freeDictData = await fetchFreeDictionary(text.trim(), dictLang);
+    if (freeDictData) {
+      result.freeDictionary = freeDictData;
+    }
+  }
+
   if (result.translatedText && !result.translatedText.startsWith("Error")) {
     await CacheManager.saveTranslation(text, from, to, JSON.stringify(result));
   }
   return result;
-}
-
-async function translate(text: string, from: string, to: string) {
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&dt=at&dt=bd&dt=rm&q=${encodeURIComponent(text)}`;
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-
-    console.log("Translation API response:", data);
-
-    // Extract main translation
-    const mainTranslation = data[0]
-      .filter((item: any) => item[0])
-      .map((item: any) => item[0])
-      .join("");
-
-    // Extract transcription (transliteration of source text)
-    let transcriptionFrom = "";
-    let transcriptionTo = "";
-    if (data[0] && data[0].length > 1) {
-      transcriptionFrom = data[0][1][3] || "";
-      transcriptionTo = data[0][1][2] || "";
-      console.log("Extracted transcription: ", transcriptionFrom, transcriptionTo);
-    }
-
-    const dictionary: { pos: string; terms: string[] }[] = [];
-    if (data[1]) {
-      data[1].forEach((item: any) => {
-        const pos = item[0];
-        const terms = item[1];
-        dictionary.push({ pos, terms });
-      });
-    }
-    return {
-      translatedText: mainTranslation,
-      dictionary: dictionary,
-      detectedLanguage: data[2],
-      transcription: { from: transcriptionFrom, to: transcriptionTo },
-    };
-  } catch (error) {
-    return { translatedText: "Error", dictionary: [] };
-  }
 }

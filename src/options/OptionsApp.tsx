@@ -19,6 +19,9 @@ export const OptionsApp: React.FC = () => {
   const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT);
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(DEFAULT_HOTKEYS);
   const [showTranscription, setShowTranscription] = useState(DEFAULT_SETTINGS.SHOW_TRANSCRIPTION);
+  const [showDefinitions, setShowDefinitions] = useState(DEFAULT_SETTINGS.SHOW_DEFINITIONS);
+  const [showExamples, setShowExamples] = useState(DEFAULT_SETTINGS.SHOW_EXAMPLES);
+  const [showSynonyms, setShowSynonyms] = useState(DEFAULT_SETTINGS.SHOW_SYNONYMS);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [voices, setVoices] = useState<chrome.tts.TtsVoice[]>([]);
   const [status, setStatus] = useState('');
@@ -35,7 +38,8 @@ export const OptionsApp: React.FC = () => {
     chrome.storage.local.get([
       'nativeLang', 'learningLang', 'preferredVoices', 'preferredAccents', 'preferredGenders',
       'historyLimit', 'uiScale', 'theme', 'autoPlayback', 'autoPlaybackLimit',
-      'hotkeys', 'ttsEngine', 'azureKey', 'azureRegion', 'showTranscription'
+      'hotkeys', 'ttsEngine', 'azureKey', 'azureRegion', 'showTranscription',
+      'showDefinitions', 'showExamples', 'showSynonyms'
     ], (settings) => {
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
@@ -52,6 +56,9 @@ export const OptionsApp: React.FC = () => {
       if (settings.azureKey) setAzureKey(settings.azureKey as string);
       if (settings.azureRegion) setAzureRegion(settings.azureRegion as string);
       if (settings.showTranscription !== undefined) setShowTranscription(settings.showTranscription as boolean);
+      if (settings.showDefinitions !== undefined) setShowDefinitions(settings.showDefinitions as boolean);
+      if (settings.showExamples !== undefined) setShowExamples(settings.showExamples as boolean);
+      if (settings.showSynonyms !== undefined) setShowSynonyms(settings.showSynonyms as boolean);
     });
 
     chrome.tts.getVoices((v) => {
@@ -113,7 +120,8 @@ export const OptionsApp: React.FC = () => {
     chrome.storage.local.set({
       nativeLang, learningLang, preferredVoices, preferredAccents, preferredGenders,
       historyLimit, uiScale, theme, autoPlayback, autoPlaybackLimit,
-      hotkeys, ttsEngine, azureKey, azureRegion, showTranscription
+      hotkeys, ttsEngine, azureKey, azureRegion, showTranscription,
+      showDefinitions, showExamples, showSynonyms
     }, () => {
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -426,6 +434,27 @@ export const OptionsApp: React.FC = () => {
                   <span>Show transcription for single words</span>
                 </label>
                 <p className="field-desc">Display phonetic transcription/transliteration when available.</p>
+              </div>
+              <div className="input-field checkbox-field">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={showDefinitions} onChange={(e) => setShowDefinitions(e.target.checked)} />
+                  <span>Show definitions</span>
+                </label>
+                <p className="field-desc">Display word definitions from Free Dictionary API.</p>
+              </div>
+              <div className="input-field checkbox-field">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={showExamples} onChange={(e) => setShowExamples(e.target.checked)} />
+                  <span>Show examples</span>
+                </label>
+                <p className="field-desc">Display usage examples for words.</p>
+              </div>
+              <div className="input-field checkbox-field">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={showSynonyms} onChange={(e) => setShowSynonyms(e.target.checked)} />
+                  <span>Show synonyms</span>
+                </label>
+                <p className="field-desc">Display synonyms for words.</p>
               </div>
             </section>
           </>

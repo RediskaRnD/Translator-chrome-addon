@@ -51,12 +51,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
   const [showTranscription, setShowTranscription] = useState(DEFAULT_SETTINGS.SHOW_TRANSCRIPTION);
+  const [showDefinitions, setShowDefinitions] = useState(DEFAULT_SETTINGS.SHOW_DEFINITIONS);
+  const [showExamples, setShowExamples] = useState(DEFAULT_SETTINGS.SHOW_EXAMPLES);
+  const [showSynonyms, setShowSynonyms] = useState(DEFAULT_SETTINGS.SHOW_SYNONYMS);
   const [systemIsDark, setSystemIsDark] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const [originalText, setOriginalText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState("");
   const [transcription, setTranscription] = useState<{ from: string; to: string } | null>(null);
   const [dictionary, setDictionary] = useState<{ pos: string, terms: string[] }[]>([]);
+  const [freeDictionary, setFreeDictionary] = useState<any[] | null>(null);
   const [from, setFrom] = useState("auto");
   const [to, setTo] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [detectedFrom, setDetectedFrom] = useState("");
@@ -163,6 +167,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       setTranslatedText(data.translatedText || "");
       setTranscription(data.transcription || null);
       setDictionary(data.dictionary || (data.alternatives ? [{ pos: 'alternatives', terms: data.alternatives }] : []));
+      setFreeDictionary(data.freeDictionary || null);
 
       chrome.storage.local.get(["autoPlayback", "autoPlaybackLimit"], (settings) => {
         const autoPlayMode = (settings.autoPlayback as 'off' | 'from' | 'to') || DEFAULT_SETTINGS.AUTO_PLAYBACK;
@@ -220,6 +225,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           setTranslatedText(res.translatedText);
           setTranscription(res.transcription || "");
           setDictionary(res.dictionary || []);
+          setFreeDictionary(res.freeDictionary || null);
           setHistoryIndex(0);
           updateHistoryLength();
 
@@ -274,7 +280,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     setIsReady(true);
     if (!isContextValid()) return;
     const hostname = window.location.hostname;
-    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'learningLang', 'hotkeys', 'showTranscription'], (settings) => {
+    chrome.storage.local.get(['uiScale', 'theme', 'autoPlayback', `lang_${hostname}`, 'nativeLang', 'learningLang', 'hotkeys', 'showTranscription', 'showDefinitions', 'showExamples', 'showSynonyms'], (settings) => {
       if (!isContextValid()) return;
       isInternalChange.current = true;
       if (settings.uiScale) setScale(settings.uiScale as number);
@@ -284,6 +290,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);
       if (settings.showTranscription !== undefined) setShowTranscription(settings.showTranscription as boolean);
+      if (settings.showDefinitions !== undefined) setShowDefinitions(settings.showDefinitions as boolean);
+      if (settings.showExamples !== undefined) setShowExamples(settings.showExamples as boolean);
+      if (settings.showSynonyms !== undefined) setShowSynonyms(settings.showSynonyms as boolean);
 
       const pageLangs = settings[`lang_${hostname}`] as { from: string, to: string } | undefined;
       if (pageLangs) { setFrom(pageLangs.from); setTo(pageLangs.to); }
@@ -481,6 +490,36 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
               {group.terms.map((term, tIdx) => renderLine(term, to, `${idx}-${tIdx}`, true))}
             </div>
           ))}
+
+          {freeDictionary && freeDictionary.map((entry, eIdx) => (
+            <div key={`free-${eIdx}`} className="free-dict-entry">
+              {showTranscription && entry.phonetic && <div className="free-phonetic">{entry.phonetic}</div>}
+              {entry.meanings.map((meaning: any, mIdx: number) => {
+                const hasVisibleContent = 
+                  (showDefinitions && meaning.definitions.length > 0) || 
+                  (showSynonyms && meaning.synonyms && meaning.synonyms.length > 0);
+                
+                if (!hasVisibleContent) return null;
+
+                return (
+                  <div key={mIdx} className="free-meaning">
+                    <div className="pos-header"><span>{meaning.partOfSpeech}</span><div className="pos-line"></div></div>
+                    {showDefinitions && meaning.definitions.map((def: any, dIdx: number) => (
+                      <div key={dIdx} className="free-definition-box">
+                        <div className="free-definition">• {def.definition}</div>
+                        {showExamples && def.example && <div className="free-example">"{def.example}"</div>}
+                      </div>
+                    ))}
+                    {showSynonyms && meaning.synonyms && meaning.synonyms.length > 0 && (
+                      <div className="free-synonyms">
+                        <span className="free-label">Synonyms:</span> {meaning.synonyms.slice(0, 5).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
       <div className="footer">
@@ -531,6 +570,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
         .forvo-link { color: var(--primary-color); text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
         .resize-handle-bottom { position: absolute; bottom: 0; left: 0; right: 0; height: 6px; cursor: ns-resize; background: transparent; }
         .resize-handle-bottom:hover { background: rgba(52, 152, 219, 0.1); }
+        .free-dict-entry { margin-top: 12px; }
+        .free-phonetic { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+        .free-meaning { margin-top: 8px; }
+        .free-definition-box { margin-bottom: 6px; }
+        .free-definition { font-size: 13px; line-height: 1.4; color: var(--text-color); }
+        .free-example { font-size: 12px; font-style: italic; color: var(--text-secondary); margin-left: 12px; margin-top: 2px; }
+        .free-synonyms { font-size: 11px; color: var(--primary-color); margin-top: 4px; }
+        .free-label { font-weight: bold; color: var(--text-secondary); }
       `}</style>
     </div>
   );

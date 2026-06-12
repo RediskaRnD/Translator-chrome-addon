@@ -10,6 +10,9 @@ export const DEFAULT_SETTINGS = {
   AZURE_KEY: '',
   AZURE_REGION: 'westeurope',
   SHOW_TRANSCRIPTION: true,
+  SHOW_DEFINITIONS: true,
+  SHOW_EXAMPLES: true,
+  SHOW_SYNONYMS: true,
 };
 
 export const DEFAULT_HOTKEYS = {

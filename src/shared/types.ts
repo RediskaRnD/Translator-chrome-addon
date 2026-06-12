@@ -12,6 +12,24 @@ export interface TranslationResponse {
     to: string;
   };
   dictionary?: { pos: string; terms: string[] }[];
+  freeDictionary?: FreeDictionaryData[];
+}
+
+export interface FreeDictionaryData {
+  word: string;
+  phonetic?: string;
+  phonetics: { text?: string; audio?: string }[];
+  meanings: {
+    partOfSpeech: string;
+    definitions: {
+      definition: string;
+      example?: string;
+      synonyms: string[];
+      antonyms: string[];
+    }[];
+    synonyms: string[];
+    antonyms: string[];
+  }[];
 }
 
 export type AutoPlaybackMode = "off" | "from" | "to";
@@ -26,6 +44,9 @@ export interface Settings {
   autoPlayback: AutoPlaybackMode;
   uiScale: number;
   showTranscription: boolean;
+  showDefinitions: boolean;
+  showExamples: boolean;
+  showSynonyms: boolean;
 }
 
 export interface HistoryItem {
