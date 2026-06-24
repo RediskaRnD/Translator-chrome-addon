@@ -2,9 +2,14 @@ import { TranslationResponse, FreeDictionaryData } from './types';
 
 export async function translate(text: string, from: string, to: string): Promise<TranslationResponse> {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&dt=at&dt=bd&dt=rm&q=${encodeURIComponent(text)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await response.json();
+    // ... rest of logic
 
     // Extract main translation
     const mainTranslation = data[0]
@@ -42,13 +47,22 @@ export async function translate(text: string, from: string, to: string): Promise
 
 export async function fetchFreeDictionary(word: string, lang: string = 'en'): Promise<FreeDictionaryData[] | null> {
   const url = `https://api.dictionaryapi.dev/api/v2/entries/${lang}/${encodeURIComponent(word)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!response.ok) return null;
     const data = await response.json();
     return data as FreeDictionaryData[];
-  } catch (error) {
-    console.error("Free Dictionary API Error:", error);
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn("Free Dictionary API timed out");
+    } else {
+      console.error("Free Dictionary API Error:", error);
+    }
     return null;
   }
 }

@@ -50,6 +50,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   const [nativeLang, setNativeLang] = useState(DEFAULT_SETTINGS.NATIVE_LANG);
   const [learningLang, setLearningLang] = useState(DEFAULT_SETTINGS.LEARNING_LANG);
   const [autoPlayback, setAutoPlayback] = useState<'off' | 'from' | 'to'>(DEFAULT_SETTINGS.AUTO_PLAYBACK);
+  const [autoPlaybackLimit, setAutoPlaybackLimit] = useState(DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT);
   const [showTranscription, setShowTranscription] = useState(DEFAULT_SETTINGS.SHOW_TRANSCRIPTION);
   const [showDefinitions, setShowDefinitions] = useState(DEFAULT_SETTINGS.SHOW_DEFINITIONS);
   const [showExamples, setShowExamples] = useState(DEFAULT_SETTINGS.SHOW_EXAMPLES);
@@ -188,6 +189,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
 
   const requestTranslation = useCallback((text: string, src: string, target: string) => {
     if (!text || !isContextValid()) return;
+
+    // Immediate auto-playback for 'from' mode if language is known
+    if (autoPlayback === 'from' && src !== 'auto') {
+      if (text.length <= autoPlaybackLimit) {
+        speak(text, src);
+      }
+    }
+
     chrome.runtime.sendMessage(
       { type: "TRANSLATE", payload: { text, from: src, to: target } },
       (res) => {
@@ -230,20 +239,22 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
           updateHistoryLength();
 
           if (autoPlayback !== 'off') {
-            const textToSpeak = autoPlayback === 'from' ? text : res.translatedText;
-            const langToSpeak = autoPlayback === 'from' ? finalFrom : finalTo;
+            const isFromAuto = autoPlayback === 'from' && src === 'auto';
+            const isTo = autoPlayback === 'to';
 
-            chrome.storage.local.get(["autoPlaybackLimit"], (settings) => {
-              const autoLimit = settings.autoPlaybackLimit ?? DEFAULT_SETTINGS.AUTO_PLAYBACK_LIMIT;
-              if (textToSpeak.length <= autoLimit) {
+            if (isTo || isFromAuto) {
+              const textToSpeak = isTo ? res.translatedText : text;
+              const langToSpeak = isTo ? finalTo : finalFrom;
+
+              if (textToSpeak && textToSpeak.length <= autoPlaybackLimit) {
                 speak(textToSpeak, langToSpeak);
               }
-            });
+            }
           }
         }
       }
     );
-  }, [updateHistoryLength, nativeLang, learningLang, autoPlayback]);
+  }, [updateHistoryLength, nativeLang, learningLang, autoPlayback, autoPlaybackLimit, speak]);
 
   // Listen for hotkeys
   useEffect(() => {
@@ -286,6 +297,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
       if (settings.uiScale) setScale(settings.uiScale as number);
       if (settings.theme) setTheme(settings.theme as 'light' | 'dark' | 'system');
       if (settings.autoPlayback) setAutoPlayback(settings.autoPlayback as 'off' | 'from' | 'to');
+      if (settings.autoPlaybackLimit !== undefined) setAutoPlaybackLimit(settings.autoPlaybackLimit as number);
       if (settings.hotkeys) setHotkeys(settings.hotkeys as Record<string, string>);
       if (settings.nativeLang) setNativeLang(settings.nativeLang as string);
       if (settings.learningLang) setLearningLang(settings.learningLang as string);

@@ -422,17 +422,31 @@ async function handleTranslation(text: string, from: string, to: string) {
 
   const settings = await chrome.storage.local.get(["showDefinitions", "showExamples", "showSynonyms"]);
   const shouldFetchDict = settings.showDefinitions || settings.showExamples || settings.showSynonyms;
-
-  const result: TranslationResponse = await translate(text, from, to);
-
-  const langCode = from === "auto" ? result.detectedLanguage : from;
-  const dictLang = langCode ? DICT_SUPPORTED_LANGS[langCode.split("-")[0]] : null;
   const isSingleWord = text.trim().split(/\s+/).length === 1;
 
-  if (shouldFetchDict && dictLang && isSingleWord) {
-    const freeDictData = await fetchFreeDictionary(text.trim(), dictLang);
-    if (freeDictData) {
-      result.freeDictionary = freeDictData;
+  let result: TranslationResponse;
+  
+  if (from !== "auto" && shouldFetchDict && isSingleWord && DICT_SUPPORTED_LANGS[from.split("-")[0]]) {
+    // Parallel fetch if language is known
+    const dictLang = DICT_SUPPORTED_LANGS[from.split("-")[0]];
+    const [translationRes, freeDictData] = await Promise.all([
+      translate(text, from, to),
+      fetchFreeDictionary(text.trim(), dictLang)
+    ]);
+    result = translationRes;
+    if (freeDictData) result.freeDictionary = freeDictData;
+  } else {
+    // Sequential fetch if language is 'auto' (need detection first)
+    result = await translate(text, from, to);
+    
+    const langCode = from === "auto" ? result.detectedLanguage : from;
+    const dictLang = langCode ? DICT_SUPPORTED_LANGS[langCode.split("-")[0]] : null;
+    
+    if (shouldFetchDict && dictLang && isSingleWord) {
+      const freeDictData = await fetchFreeDictionary(text.trim(), dictLang);
+      if (freeDictData) {
+        result.freeDictionary = freeDictData;
+      }
     }
   }
 
