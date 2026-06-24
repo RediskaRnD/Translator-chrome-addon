@@ -85,7 +85,7 @@ async function showPopup(text: string, rect: any) {
 
   if (!isPinned) {
     const popupWidth = 350; // Base width from CSS
-    const popupHeight = 200; // Base height estimate
+    const popupHeight = 400; // Base height estimate
     const margin = 10;
 
     // We calculate position in absolute pixels first, 

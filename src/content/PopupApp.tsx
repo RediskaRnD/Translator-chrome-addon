@@ -439,10 +439,16 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     }
   };
 
+  const margin = 10;
+  const dynamicMaxHeight = Math.min(
+    UI_CONSTANTS.MAX_POPUP_HEIGHT,
+    Math.max(UI_CONSTANTS.MIN_POPUP_HEIGHT, (window.innerHeight - displayY * scale - margin) / scale)
+  );
+
   const popupStyle: React.CSSProperties = {
     left: displayX, top: displayY,
     height: manualHeight !== null ? `${manualHeight}px` : 'auto',
-    maxHeight: manualHeight !== null ? 'none' : `${UI_CONSTANTS.MAX_POPUP_HEIGHT}px`,
+    maxHeight: manualHeight !== null ? 'none' : `${dynamicMaxHeight}px`,
     zoom: scale,
     opacity: isReady ? 1 : 0,
     transition: isReady ? 'opacity 0.15s ease-out' : 'none'
