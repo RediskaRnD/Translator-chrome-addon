@@ -10,6 +10,8 @@ import { DEFAULT_SETTINGS, UI_CONSTANTS, DEFAULT_HOTKEYS } from '../shared/const
 interface PopupAppProps {
   x?: number;
   y?: number;
+  bottom?: number;
+  maxHeight?: number;
   initialText: string;
   onClose: () => void;
   version: string;
@@ -34,7 +36,7 @@ function isLanguageInScript(lang: string, script: 'cyrillic' | 'latin'): boolean
   return !isCyrillicLang;
 }
 
-export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialText, version, theme: initialTheme, onClose }) => {
+export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, bottom: propBottom, maxHeight: propMaxHeight, initialText, version, theme: initialTheme, onClose }) => {
   const popupRef = React.useRef<HTMLDivElement>(null);
   const lastMousePos = React.useRef({ x: 0, y: 0 });
   const [pos, setPos] = useState({ x: propX ?? 0, y: propY ?? 0 });
@@ -351,7 +353,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
     if (target.closest('.header-controls') || target.tagName === 'SELECT' || target.tagName === 'OPTION' || target.classList.contains('resize-handle-bottom')) return;
     
     // Sync current position before starting drag to prevent jumps
-    setPos({ x: displayX, y: displayY });
+    let currentX = displayX;
+    let currentY = displayY;
+    if (popupRef.current) {
+      const rect = popupRef.current.getBoundingClientRect();
+      currentX = rect.left / scale;
+      currentY = rect.top / scale;
+    }
+    setPos({ x: currentX, y: currentY });
     setIsDragging(true);
     setHasMovedManually(true);
     lastMousePos.current = { x: e.clientX, y: e.clientY };
@@ -440,13 +449,17 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, initialT
   };
 
   const margin = 10;
-  const dynamicMaxHeight = Math.min(
-    UI_CONSTANTS.MAX_POPUP_HEIGHT,
-    Math.max(UI_CONSTANTS.MIN_POPUP_HEIGHT, (window.innerHeight - displayY * scale - margin) / scale)
-  );
+  const dynamicMaxHeight = (hasMovedManually || propMaxHeight === undefined)
+    ? Math.min(
+        UI_CONSTANTS.MAX_POPUP_HEIGHT,
+        Math.max(UI_CONSTANTS.MIN_POPUP_HEIGHT, (window.innerHeight - displayY * scale - margin) / scale)
+      )
+    : propMaxHeight;
 
   const popupStyle: React.CSSProperties = {
-    left: displayX, top: displayY,
+    left: displayX,
+    top: hasMovedManually ? displayY : (propY !== undefined ? propY : undefined),
+    bottom: hasMovedManually ? undefined : (propY === undefined && propBottom !== undefined ? propBottom : undefined),
     height: manualHeight !== null ? `${manualHeight}px` : 'auto',
     maxHeight: manualHeight !== null ? 'none' : `${dynamicMaxHeight}px`,
     zoom: scale,

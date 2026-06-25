@@ -1,5 +1,6 @@
 import { createRoot, Root } from 'react-dom/client';
 import { PopupApp } from './PopupApp';
+import { UI_CONSTANTS } from '../shared/constants';
 
 console.log('Quick Translator: Content script initialized');
 let container: HTMLDivElement | null = null;
@@ -81,7 +82,9 @@ async function showPopup(text: string, rect: any) {
   const theme = (settings.theme as 'light' | 'dark' | 'system') || 'system';
 
   let x = 0;
-  let y = 0;
+  let y: number | undefined = undefined;
+  let bottom: number | undefined = undefined;
+  let maxHeight: number | undefined = undefined;
 
   if (!isPinned) {
     const popupWidth = 350; // Base width from CSS
@@ -94,33 +97,54 @@ async function showPopup(text: string, rect: any) {
     const scaledHeight = popupHeight * scale;
 
     x = rect.left;
-    y = rect.bottom + margin;
-
-    // Keep within viewport boundaries, accounting for scale
     if (x + scaledWidth > window.innerWidth) x = window.innerWidth - scaledWidth - margin;
     if (x < 0) x = margin;
 
-    if (y + scaledHeight > window.innerHeight) {
-      const spaceAbove = rect.top - scaledHeight - margin;
-      if (spaceAbove > 0) {
-        y = spaceAbove;
-      } else {
-        // If it doesn't fit anywhere, just keep it at the bottom but push up
-        y = window.innerHeight - scaledHeight - margin;
+    const y_below = rect.bottom + margin;
+    const fitsBelow = y_below + scaledHeight <= window.innerHeight;
+
+    const y_above = rect.top - scaledHeight - margin;
+    const fitsAbove = y_above >= 0;
+
+    let useAbove = false;
+    if (!fitsBelow && fitsAbove) {
+      useAbove = true;
+    } else if (!fitsBelow && !fitsAbove) {
+      const spaceBelow = window.innerHeight - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      if (spaceAbove > spaceBelow) {
+        useAbove = true;
       }
     }
-    if (y < 0) y = margin;
 
-    // The PopupApp component uses `zoom: scale` or CSS transform.
-    // If we use `zoom`, the 'left' and 'top' values usually need to be 
-    // divided by scale if the parent is scaled, OR kept as is if the parent is not.
-    // Since our container is 100% width/height and not scaled, but the .popup 
-    // element inside has `zoom: scale`, we need to pass coordinates that 
-    // will result in the correct visual position AFTER the zoom is applied.
+    if (useAbove) {
+      // Position above the selection, anchor to bottom
+      const bottomScreen = window.innerHeight - rect.top + margin;
+      bottom = bottomScreen / scale;
+      const maxH = rect.top - margin - margin; // margin at bottom and margin at top
+      maxHeight = Math.min(
+        UI_CONSTANTS.MAX_POPUP_HEIGHT,
+        Math.max(UI_CONSTANTS.MIN_POPUP_HEIGHT, maxH / scale)
+      );
+    } else {
+      // Position below the selection, anchor to top
+      let topScreen = rect.bottom + margin;
+      if (topScreen + scaledHeight > window.innerHeight) {
+        topScreen = window.innerHeight - scaledHeight - margin;
+      }
+      if (topScreen < margin) topScreen = margin;
+
+      y = topScreen / scale;
+      const maxH = window.innerHeight - topScreen - margin;
+      maxHeight = Math.min(
+        UI_CONSTANTS.MAX_POPUP_HEIGHT,
+        Math.max(UI_CONSTANTS.MIN_POPUP_HEIGHT, maxH / scale)
+      );
+    }
+
     x = x / scale;
-    y = y / scale;
   }
-  console.log('QT Topframe: Rendering popup at', { x, y, isPinned });
+  console.log('QT Topframe: Rendering popup at', { x, y, bottom, maxHeight, isPinned });
 
   if (!reactRoot) {
     const rootDiv = document.createElement('div');
@@ -133,6 +157,8 @@ async function showPopup(text: string, rect: any) {
     <PopupApp
       x={isPinned ? undefined : x}
       y={isPinned ? undefined : y}
+      bottom={isPinned ? undefined : bottom}
+      maxHeight={isPinned ? undefined : maxHeight}
       initialText={text}
       onClose={hidePopup}
       version={version}
