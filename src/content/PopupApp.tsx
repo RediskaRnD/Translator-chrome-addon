@@ -18,6 +18,15 @@ interface PopupAppProps {
   theme?: 'light' | 'dark' | 'system';
 }
 
+function getFirstSentence(text: string): string {
+  const trimmed = text.trim();
+  // Split by newline first, and take the first non-empty line
+  const firstLine = trimmed.split(/\r?\n/)[0].trim();
+  // Now find the first sentence within that line ending with ., !, or ? followed by whitespace or end of string
+  const match = firstLine.match(/^.*?[.!?](?=\s|$)/);
+  return match ? match[0] : firstLine;
+}
+
 function getScript(text: string): 'cyrillic' | 'latin' | null {
   const hasCyrillic = /[а-яА-ЯёЁ]/.test(text);
   const hasLatin = /[a-zA-Z]/.test(text);
@@ -403,7 +412,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, bottom: 
 
   useEffect(() => { return () => { if (isContextValid()) chrome.runtime.sendMessage({ type: "STOP_AUDIO" }); }; }, []);
 
-  const wordForForvo = originalText.trim().toLowerCase().replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
+  const wordForForvo = getFirstSentence(originalText).trim().toLowerCase().replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
   const forvoHref = `https://forvo.com/search/${encodeURIComponent(wordForForvo.replace(/\s+/g, '_'))}/#${currentFrom}`;
 
   const handleWordClick = (word: string) => {

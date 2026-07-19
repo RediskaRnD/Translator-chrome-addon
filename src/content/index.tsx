@@ -251,15 +251,6 @@ const handleOutsideClick = (event: MouseEvent) => {
   }
 };
 
-function getFirstSentence(text: string): string {
-  const trimmed = text.trim();
-  // Split by newline first, and take the first non-empty line
-  const firstLine = trimmed.split(/\r?\n/)[0].trim();
-  // Now find the first sentence within that line ending with ., !, or ? followed by whitespace or end of string
-  const match = firstLine.match(/^.*?[.!?](?=\s|$)/);
-  return match ? match[0] : firstLine;
-}
-
 function trimNonAlphanumeric(text: string): string {
   // Trim standard whitespace
   let trimmed = text.trim();
@@ -278,8 +269,7 @@ function getSelectionData(target?: EventTarget | null) {
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0) {
     const rawText = selection.toString();
-    const sentence = getFirstSentence(rawText);
-    const text = trimNonAlphanumeric(sentence);
+    const text = trimNonAlphanumeric(rawText);
 
     if (text) {
       try {
@@ -333,8 +323,7 @@ function getSelectionData(target?: EventTarget | null) {
 
       if (start !== null && end !== null && start !== end) {
         const rawText = input.value.substring(start, end);
-        const sentence = getFirstSentence(rawText);
-        const text = trimNonAlphanumeric(sentence);
+        const text = trimNonAlphanumeric(rawText);
 
         if (text) {
           const rect = input.getBoundingClientRect();
