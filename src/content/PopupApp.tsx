@@ -403,8 +403,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, bottom: 
 
   useEffect(() => { return () => { if (isContextValid()) chrome.runtime.sendMessage({ type: "STOP_AUDIO" }); }; }, []);
 
-  const wordForForvo = originalText.split(/\s+/)[0].toLowerCase().replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
-  const forvoHref = `https://forvo.com/word/${encodeURIComponent(wordForForvo)}/#${currentFrom}`;
+  const wordForForvo = originalText.trim().toLowerCase().replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
+  const forvoHref = `https://forvo.com/search/${encodeURIComponent(wordForForvo.replace(/\s+/g, '_'))}/#${currentFrom}`;
 
   const handleWordClick = (word: string) => {
     const cleanWord = word.replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "");
@@ -419,6 +419,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, bottom: 
       setTo(currentFrom === to ? (to === nativeLang ? learningLang : nativeLang) : to);
     }
     setOriginalText(cleanWord);
+  };
+
+  const handleSynonymClick = (synonym: string) => {
+    const cleanSynonym = synonym.replace(/[.,\/#!$%\^&*;:{}=_`~()]/g, "").trim();
+    if (!cleanSynonym) return;
+    setOriginalText(cleanSynonym);
   };
 
   const renderLine = (text: string, lang: string, key?: string, isTranslation?: boolean) => {
@@ -543,7 +549,13 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, bottom: 
                     ))}
                     {showSynonyms && meaning.synonyms && meaning.synonyms.length > 0 && (
                       <div className="free-synonyms">
-                        <span className="free-label">Synonyms:</span> {meaning.synonyms.slice(0, 5).join(', ')}
+                        <span className="free-label">Synonyms:</span>{' '}
+                        {meaning.synonyms.slice(0, 5).map((syn: string, idx: number, arr: string[]) => (
+                          <React.Fragment key={syn}>
+                            <span className="clickable-word" onClick={() => handleSynonymClick(syn)}>{syn}</span>
+                            {idx < arr.length - 1 ? ', ' : ''}
+                          </React.Fragment>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -598,7 +610,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ x: propX, y: propY, bottom: 
         .accent-btn { width: 22px; height: 18px; display: flex; align-items: center; justify-content: center; background: var(--btn-bg); border: 1px solid var(--accent-btn-border); border-radius: 3px; font-size: 9px; font-weight: bold; cursor: pointer; color: var(--text-secondary); user-select: none; }
         .accent-btn:hover { background: var(--primary-color); color: white; }
         .footer { padding: 4px 12px; background: var(--footer-bg); border-top: 1px solid var(--header-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; user-select: none; }
-        .forvo-link { color: var(--primary-color); text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; }
+        .forvo-link { color: var(--primary-color); text-decoration: none; font-size: 11px; cursor: pointer; user-select: none; display: inline-block; max-width: 80%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
         .resize-handle-bottom { position: absolute; bottom: 0; left: 0; right: 0; height: 6px; cursor: ns-resize; background: transparent; }
         .resize-handle-bottom:hover { background: rgba(52, 152, 219, 0.1); }
         .free-dict-entry { margin-top: 12px; }
